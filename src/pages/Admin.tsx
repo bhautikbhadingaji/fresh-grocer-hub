@@ -30,6 +30,7 @@ import {
   Upload,
   X,
   Save,
+  RotateCcw
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
@@ -189,7 +190,6 @@ const Admin = () => {
     }
   };
 
-  // --- LOGIC TO PREVENT CATEGORY DELETE IF PRODUCTS EXIST ---
   const handleDeleteRequest = (id: string, type: "product" | "category") => {
     if (type === "category") {
       const hasProducts = products.some(p => String(p.categoryId) === String(id));
@@ -228,6 +228,10 @@ const Admin = () => {
       setProducts(products.map(p => (String(p.id) === String(updated._id) ? { ...updated, id: updated._id } : p)));
       toast({ title: "Stock Updated Successfully" });
     });
+  };
+
+  const handleCancelStock = (productId: string, originalStock: number) => {
+    setTempStocks(prev => ({ ...prev, [productId]: originalStock }));
   };
 
   const getStockColor = (stock: number) => {
@@ -358,6 +362,16 @@ const Admin = () => {
                                 onClick={() => setTempStocks({ ...tempStocks, [p.id]: currentTempStock + 1 })}
                               > + </Button>
                             </div>
+
+                            {hasChanged && (
+                              <Button 
+                                variant="ghost" 
+                                className="text-destructive hover:bg-destructive/10" 
+                                onClick={() => handleCancelStock(p.id, p.stock)}
+                              >
+                                <RotateCcw className="w-4 h-4 mr-1" /> Cancel
+                              </Button>
+                            )}
 
                             <Button 
                               size="sm" 

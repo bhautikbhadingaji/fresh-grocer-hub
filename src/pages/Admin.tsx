@@ -17,7 +17,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Store,
@@ -43,8 +42,14 @@ import { cn } from "@/lib/utils";
 const productSchema = Yup.object().shape({
   name: Yup.string().required("Product name is required"),
   description: Yup.string().required("Description is required"),
-  price: Yup.number().typeError("Price must be a number").positive().required(),
-  stock: Yup.number().typeError("Stock must be a number").min(0).required(),
+  price: Yup.number()
+    .typeError("Price must be a number")
+    .positive("Price must be positive")
+    .required("Price is required"),
+  stock: Yup.number()
+    .typeError("Stock must be a number")
+    .min(0, "Stock cannot be negative")
+    .required("Stock is required"),
   categoryId: Yup.string().required("Please select a category"),
   image: Yup.string().required("Product image is required"),
   unit: Yup.string().required("Unit is required"),
@@ -69,7 +74,6 @@ const Admin = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteType, setDeleteType] = useState<"product" | "category" | null>(null);
 
-  // Local state for stock editing to prevent multiple API calls
   const [tempStocks, setTempStocks] = useState<{ [key: string]: number }>({});
 
   const [productForm, setProductForm] = useState({
@@ -103,7 +107,6 @@ const Admin = () => {
     fetch(`${API}/api/products`).then(r => r.json()).then((data) => {
         const mapped = data.map((p: any) => ({ ...p, id: p._id }));
         setProducts(mapped);
-        // Initialize temp stocks
         const initialStocks: any = {};
         mapped.forEach((p: any) => initialStocks[p.id] = p.stock);
         setTempStocks(initialStocks);
@@ -121,31 +124,39 @@ const Admin = () => {
   };
 
   const blockInvalidChar = (e: React.KeyboardEvent) => {
-    if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault();
+    const allowedKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'];
+    if (!/[0-9]/.test(e.key) && !allowedKeys.includes(e.key)) {
+      e.preventDefault();
+    }
   };
 
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("THE E is -->> ",e);
     setFormErrors({});
     try {
       await productSchema.validate(productForm, { abortEarly: false });
-      const payload = { ...productForm, price: Number(productForm.price), stock: Number(productForm.stock) };
+      
+      const payload = { 
+        ...productForm, 
+        price: Math.abs(Number(productForm.price)), 
+        stock: Math.abs(Number(productForm.stock)) 
+      };
+      
       const method = editingProduct ? 'PUT' : 'POST';
       const url = editingProduct ? `${API}/api/products/${editingProduct.id}` : `${API}/api/products`;
 
-      fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-        .then(r => r.json()).then((res) => {
-          if (editingProduct) {
-            setProducts(products.map(p => (String(p.id) === String(res._id) ? { ...res, id: res._id } : p)));
-          } else {
-            setProducts([...products, { ...res, id: res._id }]);
-          }
-          setTempStocks(prev => ({ ...prev, [res._id]: res.stock }));
-          toast({ title: editingProduct ? "Product Updated" : "Product Added" });
-          setIsProductDialogOpen(false);
-          resetProductForm();
-        });
+      const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const res = await response.json();
+
+      if (editingProduct) {
+        setProducts(products.map(p => (String(p.id) === String(res._id) ? { ...res, id: res._id } : p)));
+      } else {
+        setProducts([...products, { ...res, id: res._id }]);
+      }
+      setTempStocks(prev => ({ ...prev, [res._id]: res.stock }));
+      toast({ title: editingProduct ? "Product Updated" : "Product Added" });
+      setIsProductDialogOpen(false);
+      resetProductForm();
     } catch (err: any) {
       const errors: any = {};
       err.inner?.forEach((e: any) => { if (e.path) errors[e.path] = e.message; });
@@ -155,6 +166,7 @@ const Admin = () => {
 
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormErrors({});
     try {
       await categorySchema.validate(categoryForm, { abortEarly: false });
       const method = editingCategory ? 'PUT' : 'POST';
@@ -170,7 +182,28 @@ const Admin = () => {
           resetCategoryForm();
           toast({ title: "Category Saved" });
         });
-    } catch (err: any) { /* set errors */ }
+    } catch (err: any) {
+      const errors: any = {};
+      err.inner?.forEach((e: any) => { if (e.path) errors[e.path] = e.message; });
+      setFormErrors(errors);
+    }
+  };
+
+  // --- LOGIC TO PREVENT CATEGORY DELETE IF PRODUCTS EXIST ---
+  const handleDeleteRequest = (id: string, type: "product" | "category") => {
+    if (type === "category") {
+      const hasProducts = products.some(p => String(p.categoryId) === String(id));
+      if (hasProducts) {
+        toast({ 
+          title: "Delete Failed", 
+          description: "Cannot delete category because it contains products. Delete products first.", 
+          variant: "destructive" 
+        });
+        return;
+      }
+    }
+    setDeleteId(id);
+    setDeleteType(type);
   };
 
   const confirmDelete = () => {
@@ -237,7 +270,6 @@ const Admin = () => {
           ))}
         </div>
 
-        {/* PRODUCTS TAB */}
         {activeTab === "products" && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -254,7 +286,7 @@ const Admin = () => {
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="icon" onClick={() => { setEditingProduct(product); setProductForm({ name: product.name, description: product.description, price: product.price.toString(), image: product.image, categoryId: product.categoryId, stock: product.stock.toString(), unit: product.unit }); setIsProductDialogOpen(true); }}><Pencil className="w-4 h-4" /></Button>
-                    <Button variant="outline" size="icon" className="text-destructive" onClick={() => { setDeleteId(product.id); setDeleteType("product"); }}><Trash2 className="w-4 h-4" /></Button>
+                    <Button variant="outline" size="icon" className="text-destructive" onClick={() => handleDeleteRequest(product.id, "product")}><Trash2 className="w-4 h-4" /></Button>
                   </div>
                 </div>
               ))}
@@ -262,7 +294,6 @@ const Admin = () => {
           </div>
         )}
 
-        {/* CATEGORIES TAB */}
         {activeTab === "categories" && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -275,7 +306,7 @@ const Admin = () => {
                   <div className="flex items-center gap-3"><span className="text-3xl">{cat.icon}</span><span className="font-semibold">{cat.name}</span></div>
                   <div className="flex gap-1">
                     <Button variant="ghost" size="icon" onClick={() => { setEditingCategory(cat); setCategoryForm({ name: cat.name, icon: cat.icon }); setIsCategoryDialogOpen(true); }}><Pencil className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { setDeleteId(cat.id); setDeleteType("category"); }}><Trash2 className="w-4 h-4" /></Button>
+                    <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteRequest(cat.id, "category")}><Trash2 className="w-4 h-4" /></Button>
                   </div>
                 </div>
               ))}
@@ -283,7 +314,6 @@ const Admin = () => {
           </div>
         )}
 
-        {/* STOCK MANAGEMENT TAB (UPDATED) */}
         {activeTab === "stock" && (
           <div className="space-y-8">
             <h2 className="text-2xl font-bold text-foreground">Stock Management</h2>
@@ -350,56 +380,110 @@ const Admin = () => {
         )}
       </div>
 
-      {/* DIALOGS FOR PRODUCT & CATEGORY */}
+      {/* Product Dialog */}
       <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto bg-card">
           <DialogHeader><DialogTitle>{editingProduct ? "Edit Product" : "Add Product"}</DialogTitle></DialogHeader>
-          <form onSubmit={handleProductSubmit} className="space-y-4">
-            <div className="space-y-1"><Label>Name</Label><Input value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} /></div>
-            <div className="space-y-1"><Label>Description</Label><Textarea value={productForm.description} onChange={e => setProductForm({...productForm, description: e.target.value})} /></div>
-            <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1"><Label>Price</Label><Input type="number" onKeyDown={blockInvalidChar} value={productForm.price} onChange={e => setProductForm({...productForm, price: e.target.value})} /></div>
-                <div className="space-y-1"><Label>Stock</Label><Input type="number" onKeyDown={blockInvalidChar} value={productForm.stock} onChange={e => setProductForm({...productForm, stock: e.target.value})} /></div>
+          <form onSubmit={handleProductSubmit} className="space-y-4 pt-4">
+            <div className="space-y-1">
+              <Label className={formErrors.name ? "text-destructive" : ""}>Name</Label>
+              <Input 
+                className={formErrors.name ? "border-destructive focus-visible:ring-destructive" : ""}
+                value={productForm.name} 
+                onChange={e => setProductForm({...productForm, name: e.target.value})} 
+              />
+              {formErrors.name && <p className="text-[10px] text-destructive font-medium">{formErrors.name}</p>}
             </div>
+
+            <div className="space-y-1">
+              <Label className={formErrors.description ? "text-destructive" : ""}>Description</Label>
+              <Textarea 
+                className={formErrors.description ? "border-destructive focus-visible:ring-destructive" : ""}
+                value={productForm.description} 
+                onChange={e => setProductForm({...productForm, description: e.target.value})} 
+              />
+              {formErrors.description && <p className="text-[10px] text-destructive font-medium">{formErrors.description}</p>}
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                    <Label>Category</Label>
+                  <Label className={formErrors.price ? "text-destructive" : ""}>Price (₹)</Label>
+                  <Input 
+                    type="number" 
+                    min="0"
+                    onKeyDown={blockInvalidChar} 
+                    className={formErrors.price ? "border-destructive focus-visible:ring-destructive" : ""}
+                    value={productForm.price} 
+                    onChange={e => setProductForm({...productForm, price: e.target.value})} 
+                  />
+                  {formErrors.price && <p className="text-[10px] text-destructive font-medium">{formErrors.price}</p>}
+                </div>
+                <div className="space-y-1">
+                  <Label className={formErrors.stock ? "text-destructive" : ""}>Stock</Label>
+                  <Input 
+                    type="number" 
+                    min="0"
+                    onKeyDown={blockInvalidChar} 
+                    className={formErrors.stock ? "border-destructive focus-visible:ring-destructive" : ""}
+                    value={productForm.stock} 
+                    onChange={e => setProductForm({...productForm, stock: e.target.value})} 
+                  />
+                  {formErrors.stock && <p className="text-[10px] text-destructive font-medium">{formErrors.stock}</p>}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                    <Label className={formErrors.categoryId ? "text-destructive" : ""}>Category</Label>
                     <Select value={productForm.categoryId} onValueChange={v => setProductForm({...productForm, categoryId: v})}>
-                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectTrigger className={formErrors.categoryId ? "border-destructive" : ""}><SelectValue placeholder="Select" /></SelectTrigger>
                         <SelectContent className="bg-card">{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>)}</SelectContent>
                     </Select>
+                    {formErrors.categoryId && <p className="text-[10px] text-destructive font-medium">{formErrors.categoryId}</p>}
                 </div>
                 <div className="space-y-1">
-                    <Label>Unit</Label>
+                    <Label className={formErrors.unit ? "text-destructive" : ""}>Unit</Label>
                     <Select value={productForm.unit} onValueChange={v => setProductForm({...productForm, unit: v})}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger className={formErrors.unit ? "border-destructive" : ""}><SelectValue /></SelectTrigger>
                         <SelectContent className="bg-card"><SelectItem value="kg">kg</SelectItem><SelectItem value="g">g</SelectItem><SelectItem value="ltr">ltr</SelectItem><SelectItem value="piece">piece</SelectItem></SelectContent>
                     </Select>
+                    {formErrors.unit && <p className="text-[10px] text-destructive font-medium">{formErrors.unit}</p>}
                 </div>
             </div>
+
             <div className="space-y-2">
-                <Label>Image</Label>
+                <Label className={formErrors.image ? "text-destructive" : ""}>Image</Label>
                 <div className="flex gap-2 items-center">
                     <Input id="img-up" type="file" className="hidden" onChange={handleImageUpload} />
-                    <Button type="button" variant="outline" className="w-full border-dashed" onClick={() => document.getElementById('img-up')?.click()}><Upload className="mr-2 h-4 w-4" /> Upload</Button>
-                    {productForm.image && <div className="relative w-12 h-12"><img src={productForm.image} className="w-full h-full object-cover rounded" /><Button onClick={() => setProductForm({...productForm, image: ""})} type="button" variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0"><X className="h-3 w-3" /></Button></div>}
+                    <Button type="button" variant="outline" className={cn("w-full border-dashed", formErrors.image && "border-destructive text-destructive")} onClick={() => document.getElementById('img-up')?.click()}><Upload className="mr-2 h-4 w-4" /> Upload</Button>
+                    {productForm.image && <div className="relative w-12 h-12 shrink-0"><img src={productForm.image} className="w-full h-full object-cover rounded" /><Button onClick={() => setProductForm({...productForm, image: ""})} type="button" variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0"><X className="h-3 v-3" /></Button></div>}
                 </div>
+                {formErrors.image && <p className="text-[10px] text-destructive font-medium">{formErrors.image}</p>}
             </div>
-            <Button type="submit" className="w-full" variant="hero">Save Product</Button>
+            <Button type="submit" className="w-full" variant="hero">{editingProduct ? "Update Product" : "Save Product"}</Button>
           </form>
         </DialogContent>
       </Dialog>
 
+      {/* Category Dialog */}
       <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
         <DialogContent className="bg-card">
-          <DialogHeader><DialogTitle>Category</DialogTitle></DialogHeader>
-          <form onSubmit={handleCategorySubmit} className="space-y-4">
-            <div className="space-y-1"><Label>Name</Label><Input value={categoryForm.name} onChange={e => setCategoryForm({...categoryForm, name: e.target.value})} /></div>
+          <DialogHeader><DialogTitle>{editingCategory ? "Edit Category" : "Add Category"}</DialogTitle></DialogHeader>
+          <form onSubmit={handleCategorySubmit} className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <Label className={formErrors.name ? "text-destructive" : ""}>Name</Label>
+              <Input 
+                className={formErrors.name ? "border-destructive" : ""}
+                value={categoryForm.name} 
+                onChange={e => setCategoryForm({...categoryForm, name: e.target.value})} 
+              />
+              {formErrors.name && <p className="text-xs text-destructive">{formErrors.name}</p>}
+            </div>
             <div className="space-y-2">
               <Label>Icon</Label>
               <div className="flex flex-wrap gap-2">
                 {["📦", "🥬", "🍎", "🥛", "🌾", "🌶️", "🍪", "🥩", "🍞"].map(emoji => (
-                  <button key={emoji} type="button" onClick={() => setCategoryForm({...categoryForm, icon: emoji})} className={cn("w-10 h-10 rounded border", categoryForm.icon === emoji ? "border-primary bg-primary/10" : "border-border")}>{emoji}</button>
+                  <button key={emoji} type="button" onClick={() => setCategoryForm({...categoryForm, icon: emoji})} className={cn("w-10 h-10 rounded border transition-all", categoryForm.icon === emoji ? "border-primary bg-primary/10 scale-110 shadow-sm" : "border-border hover:bg-muted")}>{emoji}</button>
                 ))}
               </div>
             </div>

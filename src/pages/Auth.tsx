@@ -15,31 +15,32 @@ const Auth = () => {
     password: "",
   });
   const { toast } = useToast();
+  const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Mock authentication - will be replaced with real auth
     if (isLogin) {
-      if (formData.email === "admin@freshmart.com" && formData.password === "admin123") {
-        toast({
-          title: "Login Successful!",
-          description: "Welcome back, Admin!",
-        });
-        window.location.href = "/admin";
-      } else {
-        toast({
-          title: "Login Failed",
-          description: "Invalid email or password. Try admin@freshmart.com / admin123",
-          variant: "destructive",
-        });
-      }
-    } else {
-      toast({
-        title: "Registration Successful!",
-        description: "Your account has been created. Please login.",
+      fetch(`${API}/api/auth/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: formData.email, password: formData.password })
+      }).then(async (r) => {
+        if (!r.ok) throw new Error('Invalid credentials');
+        const data = await r.json();
+        toast({ title: 'Login Successful!', description: `Welcome back, ${data.user.name || 'User'}!` });
+        localStorage.setItem('token', data.token);
+        window.location.href = '/admin';
+      }).catch(() => {
+        toast({ title: 'Login Failed', description: 'Invalid email or password.', variant: 'destructive' });
       });
-      setIsLogin(true);
+    } else {
+      fetch(`${API}/api/auth/register`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: formData.name, email: formData.email, password: formData.password })
+      }).then(async (r) => {
+        if (!r.ok) throw new Error('Register failed');
+        toast({ title: 'Registration Successful!', description: 'Your account has been created. Please login.' });
+        setIsLogin(true);
+      }).catch(() => {
+        toast({ title: 'Registration Failed', description: 'Unable to register.', variant: 'destructive' });
+      });
     }
   };
 

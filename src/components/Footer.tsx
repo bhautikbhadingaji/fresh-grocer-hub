@@ -95,9 +95,7 @@ const Footer = () => {
         </div>
 
         <div className="border-t border-primary-foreground/10 mt-8 pt-8 text-center">
-          <p className="text-primary-foreground/60 flex items-center justify-center gap-1">
-            Made with <Heart className="w-4 h-4 text-destructive fill-destructive" /> by FreshMart Team
-          </p>
+         
         </div>
       </div>
     </footer>

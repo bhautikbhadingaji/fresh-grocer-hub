@@ -1,22 +1,31 @@
-import { useState } from "react";
+import React from "react";
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
 import ProductCard from "@/components/ProductCard";
 import CategoryCard from "@/components/CategoryCard";
 import Footer from "@/components/Footer";
-import { products, categories } from "@/data/mockData";
+import { useEffect, useState } from "react";
+import { Product as ProductType, Category as CategoryType } from "@/types";
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 import { Sparkles } from "lucide-react";
 
 const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [products, setProducts] = useState<ProductType[]>([]);
+  const [categories, setCategories] = useState<CategoryType[]>([]);
+
+  useEffect(() => {
+    fetch(`${API}/api/products`).then(r => r.json()).then((data) => setProducts(data.map((p: any) => ({ ...p, id: p._id })))).catch(() => {});
+    fetch(`${API}/api/categories`).then(r => r.json()).then((data) => setCategories(data.map((c: any) => ({ ...c, id: c._id })))).catch(() => {});
+  }, []);
 
   const filteredProducts = selectedCategory
     ? products.filter((p) => p.categoryId === selectedCategory)
     : products;
 
-  const getCategoryById = (id: string) => categories.find((c) => c.id === id);
+  const getCategoryById = (id: string) => categories.find((c) => String(c._id || c.id) === String(id));
   const getProductCountByCategory = (categoryId: string) =>
-    products.filter((p) => p.categoryId === categoryId).length;
+    products.filter((p) => String(p.categoryId) === String(categoryId)).length;
 
   return (
     <div className="min-h-screen bg-background">

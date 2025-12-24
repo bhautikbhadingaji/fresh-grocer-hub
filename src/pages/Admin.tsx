@@ -62,7 +62,7 @@ const categorySchema = Yup.object().shape({
 });
 
 const Admin = () => {
-  const [activeTab, setActiveTab] = useState<"products" | "categories" | "stock">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "categories" | "stock" | "sales">("products");
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
@@ -76,6 +76,11 @@ const Admin = () => {
   const [deleteType, setDeleteType] = useState<"product" | "category" | null>(null);
 
   const [tempStocks, setTempStocks] = useState<{ [key: string]: number }>({});
+
+  // Sales States
+  const [selectedSalesProduct, setSelectedSalesProduct] = useState<string>("");
+  const [salesQuantity, setSalesQuantity] = useState<string>("");
+  const [salesSearch, setSalesSearch] = useState("");
 
   const [productForm, setProductForm] = useState({
     name: "",
@@ -219,19 +224,45 @@ const Admin = () => {
 
   const handleUpdateStock = (productId: string, newStock: number) => {
     const finalStock = Math.max(0, newStock);
-    fetch(`${API}/api/products/${productId}`, { 
-        method: 'PUT', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ stock: finalStock }) 
+    const existing = products.find(p => String(p.id) === String(productId));
+    const original = existing ? existing.stock : 0;
+    const delta = finalStock - original;
+
+    if (delta === 0) return;
+
+    fetch(`${API}/api/products/${productId}/stock`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delta })
     })
     .then(r => r.json()).then((updated) => {
       setProducts(products.map(p => (String(p.id) === String(updated._id) ? { ...updated, id: updated._id } : p)));
+      setTempStocks(prev => ({ ...prev, [productId]: updated.stock }));
       toast({ title: "Stock Updated Successfully" });
-    });
+    }).catch(() => toast({ title: 'Stock update failed', variant: 'destructive' }));
   };
 
   const handleCancelStock = (productId: string, originalStock: number) => {
     setTempStocks(prev => ({ ...prev, [productId]: originalStock }));
+  };
+
+  const handleSalesSubmit = () => {
+    const product = products.find(p => p.id === selectedSalesProduct);
+    if (!product || !salesQuantity) return;
+
+    const qty = Number(salesQuantity);
+    if (qty > product.stock) {
+      toast({ title: "Insufficient stock!", variant: "destructive" });
+      return;
+    }
+
+    const newStock = product.stock - qty;
+    handleUpdateStock(product.id, newStock);
+    
+    // Reset Sales Form
+    setSelectedSalesProduct("");
+    setSalesQuantity("");
+    setSalesSearch("");
   };
 
   const getStockColor = (stock: number) => {
@@ -244,6 +275,7 @@ const Admin = () => {
     { id: "products" as const, label: "Products", icon: Package, count: products.length },
     { id: "categories" as const, label: "Categories", icon: Tags, count: categories.length },
     { id: "stock" as const, label: "Stock Management", icon: BarChart3 },
+    { id: "sales" as const, label: "Daily Sales", icon: Store },
   ];
 
   return (
@@ -390,6 +422,85 @@ const Admin = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* --- NEW DAILY SALES SECTION --- */}
+        {activeTab === "sales" && (
+          <div className="space-y-6 max-w-2xl mx-auto">
+            <h2 className="text-2xl font-bold">Daily Sales</h2>
+            <div className="bg-card p-6 rounded-xl border shadow-sm space-y-4">
+              <div className="space-y-2">
+                <Label>Search Product</Label>
+                <Input 
+                  placeholder="Type name to search..." 
+                  value={salesSearch} 
+                  onChange={(e) => setSalesSearch(e.target.value)} 
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Select Product</Label>
+                <Select value={selectedSalesProduct} onValueChange={setSelectedSalesProduct}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a product" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card">
+                    {products
+                      .filter(p => p.name.toLowerCase().includes(salesSearch.toLowerCase()))
+                      .map(p => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name} (Stock: {p.stock} {p.unit})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedSalesProduct && (
+                <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                  <div className="space-y-2">
+                    <Label>Quantity to Sell</Label>
+                    <Input 
+                      type="number" 
+                      placeholder="0"
+                      value={salesQuantity}
+                      onChange={(e) => setSalesQuantity(e.target.value)}
+                      onKeyDown={blockInvalidChar}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Unit</Label>
+                    <Input 
+                      readOnly 
+                      value={products.find(p => p.id === selectedSalesProduct)?.unit || ""} 
+                      className="bg-muted"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <Button 
+                  className="flex-1" 
+                  variant="hero" 
+                  onClick={handleSalesSubmit}
+                  disabled={!selectedSalesProduct || !salesQuantity}
+                >
+                  <Save className="w-4 h-4 mr-2" /> Save Sale
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setSelectedSalesProduct("");
+                    setSalesQuantity("");
+                    setSalesSearch("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>

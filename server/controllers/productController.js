@@ -39,6 +39,27 @@ exports.update = async (req, res) => {
   }
 };
 
+exports.updateStock = async (req, res) => {
+  try {
+    const { stock, delta } = req.body;
+    const prod = await Product.findById(req.params.id);
+    if (!prod) return res.status(404).json({ message: 'Not found' });
+
+    if (typeof delta === 'number') {
+      prod.stock = Math.max(0, (prod.stock || 0) + delta);
+    } else if (typeof stock === 'number') {
+      prod.stock = Math.max(0, stock);
+    } else {
+      return res.status(400).json({ message: 'Invalid payload' });
+    }
+
+    await prod.save();
+    res.json(prod);
+  } catch (err) {
+    res.status(400).json({ message: 'Invalid data' });
+  }
+};
+
 exports.remove = async (req, res) => {
   try {
     await Product.findByIdAndDelete(req.params.id);

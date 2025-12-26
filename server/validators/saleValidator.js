@@ -2,8 +2,13 @@ const Joi = require('joi');
 
 const createSaleSchema = Joi.object({
   productId: Joi.string().required(),
-  quantity: Joi.number().integer().min(1).required(),
+  quantity: Joi.number().min(0.01).required(),
   unitPrice: Joi.number().positive().optional()
 });
 
-module.exports = { createSaleSchema };
+// Aa badlav karo: .unknown(true) add karyu che
+const updateSaleSchema = Joi.object({
+  quantity: Joi.number().min(0.01).required()
+}).unknown(true); 
+
+module.exports = { createSaleSchema, updateSaleSchema };

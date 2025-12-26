@@ -28,12 +28,52 @@ exports.create = async (req, res) => {
   }
 };
 
+// --- UPDATE SALE (Navu function add karyu che) ---
+exports.update = async (req, res) => {
+  try {
+    const { quantity } = req.body;
+    const saleId = req.params.id;
+
+    // 1. Find old sale record
+    const oldSale = await Sale.findById(saleId);
+    if (!oldSale) return res.status(404).json({ message: 'Sale record not found' });
+
+    // 2. Diff calculation (Junni quantity ane navi quantity no tafavat)
+    const diff = quantity - oldSale.quantity;
+
+    // 3. Update Product stock (Jo navi quantity vadhare hoy to stock ghatse, ochi hoy to badhse)
+    // Check if enough stock is available for the increase
+    const updatedProduct = await Product.findOneAndUpdate(
+      { _id: oldSale.productId, stock: { $gte: diff } },
+      { $inc: { stock: -diff } },
+      { new: true }
+    ).lean();
+
+    if (!updatedProduct) {
+      return res.status(400).json({ message: 'Insufficient stock to update sale' });
+    }
+
+    // 4. Update Sale record
+    const unitPrice = oldSale.unitPrice;
+    const total = unitPrice * quantity;
+
+    const updatedSale = await Sale.findByIdAndUpdate(
+      saleId,
+      { quantity, total },
+      { new: true }
+    ).populate('productId');
+
+    res.json({ sale: updatedSale, product: updatedProduct });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
 exports.getAll = async (req, res) => {
   try {
     const { date } = req.query;
     const filter = {};
     if (date) {
-      // Expecting YYYY-MM-DD
       const start = new Date(date);
       start.setHours(0,0,0,0);
       const end = new Date(start);
@@ -78,7 +118,6 @@ exports.remove = async (req, res) => {
     const sale = await Sale.findById(req.params.id).lean();
     if (!sale) return res.status(404).json({ message: 'Sale not found' });
 
-    // Restock product by sale quantity
     const product = await Product.findByIdAndUpdate(sale.productId, { $inc: { stock: sale.quantity } }, { new: true }).lean();
 
     await Sale.findByIdAndDelete(req.params.id);

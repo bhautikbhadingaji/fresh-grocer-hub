@@ -102,7 +102,7 @@ const Admin = () => {
   const [salesSearch, setSalesSearch] = useState("");
 
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8; 
+  const itemsPerPage = 6; 
 
   const [productForm, setProductForm] = useState({
     name: "", description: "", price: "", image: "", categoryId: "", stock: "", unit: "kg",

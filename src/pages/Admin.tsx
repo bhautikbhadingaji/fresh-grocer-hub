@@ -33,7 +33,9 @@ import {
   RotateCcw,
   Search,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  History,
+  CalendarDays
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
@@ -41,6 +43,16 @@ import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 import { Product, Category } from "@/types";
 import { cn } from "@/lib/utils";
+
+// Sales history mate interface
+interface SaleRecord {
+  _id: string;
+  productId: Product;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  createdAt: string;
+}
 
 // --- VALIDATION SCHEMAS ---
 const productSchema = Yup.object().shape({
@@ -68,28 +80,29 @@ const Admin = () => {
   const [activeTab, setActiveTab] = useState<"products" | "categories" | "stock" | "sales">("products");
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [salesHistory, setSalesHistory] = useState<SaleRecord[]>([]);
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [isSaleEditDialogOpen, setIsSaleEditDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
   const { toast } = useToast();
 
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleteType, setDeleteType] = useState<"product" | "category" | null>(null);
+  const [deleteType, setDeleteType] = useState<"product" | "category" | "sale" | null>(null);
   const [tempStocks, setTempStocks] = useState<{ [key: string]: number }>({});
   const [selectedSalesProduct, setSelectedSalesProduct] = useState<string>("");
   const [salesQuantity, setSalesQuantity] = useState<string>("");
   
-  // --- SEARCH STATES ---
   const [productSearch, setProductSearch] = useState("");
   const [categorySearch, setCategorySearch] = useState("");
   const [stockSearch, setStockSearch] = useState("");
   const [salesSearch, setSalesSearch] = useState("");
 
-  // Pagination States
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8; // Set to 8 per your last request
+  const itemsPerPage = 8; 
 
   const [productForm, setProductForm] = useState({
     name: "", description: "", price: "", image: "", categoryId: "", stock: "", unit: "kg",
@@ -117,6 +130,10 @@ const Admin = () => {
     setFormErrors({});
   };
 
+  const fetchSales = () => {
+    fetch(`${API}/api/sales`).then(r => r.json()).then(data => setSalesHistory(data)).catch(() => {});
+  };
+
   useEffect(() => {
     fetch(`${API}/api/products`).then(r => r.json()).then((data) => {
         const mapped = data.map((p: any) => ({ ...p, id: p._id }));
@@ -126,6 +143,7 @@ const Admin = () => {
         setTempStocks(initialStocks);
     }).catch(() => {});
     fetch(`${API}/api/categories`).then(r => r.json()).then((data) => setCategories(data.map((c: any) => ({ ...c, id: c._id })))).catch(() => {});
+    fetchSales();
   }, []);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,12 +158,8 @@ const Admin = () => {
     }
   };
 
-  const handlePriceKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyRestriction = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const allowedKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', '.'];
-    if (e.key === '0' && (e.currentTarget.value === "" || e.currentTarget.value === "0")) {
-      e.preventDefault();
-      return;
-    }
     if (!/[0-9]/.test(e.key) && !allowedKeys.includes(e.key)) {
       e.preventDefault();
     }
@@ -202,7 +216,7 @@ const Admin = () => {
     }
   };
 
-  const handleDeleteRequest = (id: string, type: "product" | "category") => {
+  const handleDeleteRequest = (id: string, type: "product" | "category" | "sale") => {
     if (type === "category") {
       const hasProducts = products.some(p => String(p.categoryId) === String(id));
       if (hasProducts) {
@@ -215,11 +229,18 @@ const Admin = () => {
 
   const confirmDelete = () => {
     if (!deleteId || !deleteType) return;
-    const endpoint = deleteType === "product" ? "products" : "categories";
+    const endpoint = deleteType === "product" ? "products" : deleteType === "category" ? "categories" : "sales";
     fetch(`${API}/api/${endpoint}/${deleteId}`, { method: "DELETE" })
-      .then(() => {
+      .then(r => r.json())
+      .then((res) => {
         if (deleteType === "product") setProducts(products.filter(p => String(p.id) !== String(deleteId)));
-        else setCategories(categories.filter(c => String(c.id) !== String(deleteId)));
+        else if (deleteType === "category") setCategories(categories.filter(c => String(c.id) !== String(deleteId)));
+        else {
+          setSalesHistory(salesHistory.filter(s => s._id !== deleteId));
+          if (res.product) {
+            setProducts(products.map(p => String(p.id) === String(res.product._id) ? { ...res.product, id: res.product._id } : p));
+          }
+        }
         toast({ title: "Item Deleted Successfully" });
       }).finally(() => { setDeleteId(null); setDeleteType(null); });
   };
@@ -237,11 +258,61 @@ const Admin = () => {
     });
   };
 
-  // --- FILTERED DATA FOR SEARCH ---
+  const handleSaveSale = async () => {
+    const product = products.find(p => p.id === (editingSale ? (editingSale.productId as any)._id : selectedSalesProduct));
+    if (!product || !salesQuantity) return;
+
+    const qty = parseFloat(salesQuantity);
+    if (qty <= 0) return;
+
+    const method = editingSale ? 'PUT' : 'POST';
+    const url = editingSale ? `${API}/api/sales/${editingSale._id}` : `${API}/api/sales`;
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: product.id,
+          quantity: qty,
+          unitPrice: product.price
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        if (editingSale) {
+           toast({ title: "Sale Updated Successfully" });
+           setIsSaleEditDialogOpen(false);
+           setEditingSale(null);
+        } else {
+           toast({ title: "Sale Recorded Successfully" });
+        }
+        setProducts(products.map(p => String(p.id) === String(data.product._id) ? { ...data.product, id: data.product._id } : p));
+        setSelectedSalesProduct("");
+        setSalesQuantity("");
+        setSalesSearch("");
+        fetchSales();
+      } else {
+        toast({ title: "Error", description: data.message, variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Server Error", variant: "destructive" });
+    }
+  };
+
+  // Logic to group sales by date
+  const groupedSales = salesHistory.reduce((groups: any, sale) => {
+    const date = new Date(sale.createdAt).toLocaleDateString('en-GB'); 
+    if (!groups[date]) groups[date] = { items: [], totalRevenue: 0, totalQty: 0 };
+    groups[date].items.push(sale);
+    groups[date].totalRevenue += sale.total;
+    groups[date].totalQty += sale.quantity;
+    return groups;
+  }, {});
+
   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()));
   const filteredCategories = categories.filter(c => c.name.toLowerCase().includes(categorySearch.toLowerCase()));
 
-  // Pagination logic
   const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
   const currentProducts = filteredProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
@@ -251,6 +322,10 @@ const Admin = () => {
     { id: "stock" as const, label: "Stock Management", icon: BarChart3 },
     { id: "sales" as const, label: "Daily Sales", icon: Store },
   ];
+
+  // Sale calculation
+  const currentSaleProduct = products.find(p => p.id === (editingSale ? (editingSale.productId as any)._id : selectedSalesProduct));
+  const totalSaleAmount = currentSaleProduct && salesQuantity ? (currentSaleProduct.price * parseFloat(salesQuantity)).toFixed(2) : "0.00";
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -329,7 +404,6 @@ const Admin = () => {
                 </table>
               </div>
               
-              {/* Pagination Controls */}
               {filteredProducts.length > itemsPerPage && (
                 <div className="p-4 border-t border-border flex items-center justify-between bg-card">
                   <p className="text-sm text-muted-foreground hidden sm:block">
@@ -437,14 +511,43 @@ const Admin = () => {
                         <div key={p.id} className="bg-card rounded-xl border p-4 flex flex-wrap items-center gap-4">
                           <img src={p.image} className="w-14 h-14 rounded-lg object-cover" />
                           <div className="flex-1 min-w-[150px]"><h4 className="font-semibold">{p.name}</h4><p className="text-xs">Current: {p.stock} {p.unit}</p></div>
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2 bg-muted rounded-lg p-1.5 px-2 gap-3">
+                          
+                          <div className="flex items-center justify-end gap-3 min-w-[340px]">
+                            <div className="w-[100px] flex justify-end">
+                              {hasChanged && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="text-destructive whitespace-nowrap px-2" 
+                                  onClick={() => setTempStocks({ ...tempStocks, [p.id]: p.stock })}
+                                >
+                                  <RotateCcw className="w-4 h-4 mr-1" /> Cancel
+                                </Button>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 bg-muted rounded-lg p-1.5 px-2">
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setTempStocks({ ...tempStocks, [p.id]: Math.max(0, currentTempStock - 1) })}> - </Button>
-                              <Input type="number" step="any" className="w-16 h-8 text-center bg-transparent border-none font-bold" value={currentTempStock} onChange={(e) => setTempStocks({ ...tempStocks, [p.id]: parseFloat(e.target.value) || 0 })} />
+                              <Input 
+                                type="number" 
+                                step="any" 
+                                // CSS to hide arrows
+                                className="w-16 h-8 text-center bg-transparent border-none font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
+                                value={currentTempStock} 
+                                onChange={(e) => setTempStocks({ ...tempStocks, [p.id]: parseFloat(e.target.value) || 0 })} 
+                              />
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setTempStocks({ ...tempStocks, [p.id]: currentTempStock + 1 })}> + </Button>
                             </div>
-                            {hasChanged && <Button variant="ghost" className="text-destructive" onClick={() => setTempStocks({ ...tempStocks, [p.id]: p.stock })}><RotateCcw className="w-4 h-4 mr-1" /> Cancel</Button>}
-                            <Button size="sm" variant={hasChanged ? "hero" : "outline"} disabled={!hasChanged} onClick={() => handleUpdateStock(p.id, currentTempStock)} className="gap-2"><Save className="w-4 h-4" /> Save</Button>
+
+                            <Button 
+                              size="sm" 
+                              variant={hasChanged ? "hero" : "outline"} 
+                              disabled={!hasChanged} 
+                              onClick={() => handleUpdateStock(p.id, currentTempStock)} 
+                              className="gap-2 min-w-[90px]"
+                            >
+                              <Save className="w-4 h-4" /> Save
+                            </Button>
                           </div>
                         </div>
                       );
@@ -457,55 +560,161 @@ const Admin = () => {
         )}
 
         {activeTab === "sales" && (
-           <div className="space-y-6 max-w-2xl mx-auto">
-           <h2 className="text-2xl font-bold">Daily Sales</h2>
-           <div className="bg-card p-6 rounded-xl border space-y-4">
-             <div className="space-y-2">
-               <Label>Select Product</Label>
-               <div className="relative">
-                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                 <Select value={selectedSalesProduct} onValueChange={setSelectedSalesProduct}>
-                   <SelectTrigger className="pl-10">
-                     <SelectValue placeholder="Search or Select Product" />
-                   </SelectTrigger>
-                   <SelectContent className="bg-card">
-                     <div className="p-2 border-b border-border sticky top-0 bg-card z-10">
-                        <Input 
-                          placeholder="Type to filter..." 
-                          className="h-8" 
-                          value={salesSearch} 
-                          onChange={(e) => setSalesSearch(e.target.value)} 
-                          onKeyDown={(e) => e.stopPropagation()} 
-                        />
-                     </div>
-                     {products
-                       .filter(p => p.name.toLowerCase().includes(salesSearch.toLowerCase()))
-                       .map(p => <SelectItem key={p.id} value={p.id}>{p.name} (Stock: {p.stock} {p.unit})</SelectItem>)
-                     }
-                   </SelectContent>
-                 </Select>
-               </div>
-             </div>
-             {selectedSalesProduct && (
-               <div className="grid grid-cols-2 gap-4">
-                 <div className="space-y-2"><Label>Quantity</Label><Input type="number" step="any" value={salesQuantity} onChange={(e) => setSalesQuantity(e.target.value)} /></div>
-                 <div className="space-y-2"><Label>Unit</Label><Input readOnly value={products.find(p => p.id === selectedSalesProduct)?.unit || ""} className="bg-muted" /></div>
-               </div>
-             )}
-             <div className="flex gap-3 pt-4">
-               <Button className="flex-1" variant="hero" onClick={() => {
-                  const product = products.find(p => p.id === selectedSalesProduct);
-                  if (product && salesQuantity) handleUpdateStock(product.id, product.stock - Number(salesQuantity));
-                  setSelectedSalesProduct(""); setSalesQuantity(""); setSalesSearch("");
-               }} disabled={!selectedSalesProduct || !salesQuantity}><Save className="w-4 h-4 mr-2" /> Save Sale</Button>
-               <Button variant="outline" onClick={() => { setSelectedSalesProduct(""); setSalesQuantity(""); setSalesSearch(""); }}>Cancel</Button>
-             </div>
-           </div>
+           <div className="space-y-10">
+            <div className="max-w-2xl mx-auto space-y-6">
+              <h2 className="text-2xl font-bold">Record Daily Sale</h2>
+              <div className="bg-card p-6 rounded-xl border space-y-4 shadow-sm">
+                <div className="space-y-2">
+                  <Label>Select Product</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Select value={selectedSalesProduct} onValueChange={setSelectedSalesProduct}>
+                      <SelectTrigger className="pl-10">
+                        <SelectValue placeholder="Search or Select Product" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card">
+                        <div className="p-2 border-b border-border sticky top-0 bg-card z-10">
+                            <Input 
+                              placeholder="Type to filter..." 
+                              className="h-8" 
+                              value={salesSearch} 
+                              onChange={(e) => setSalesSearch(e.target.value)} 
+                              onKeyDown={(e) => e.stopPropagation()} 
+                            />
+                        </div>
+                        {products
+                          .filter(p => p.name.toLowerCase().includes(salesSearch.toLowerCase()))
+                          .map(p => <SelectItem key={p.id} value={p.id}>{p.name} (Stock: {p.stock} {p.unit})</SelectItem>)
+                        }
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {selectedSalesProduct && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-top-2">
+                    <div className="space-y-2">
+                        <Label>Quantity to Sell</Label>
+                        <div className="flex gap-2">
+                          <Input 
+                            type="number" 
+                            step="any" 
+                            onKeyDown={(e) => handleKeyRestriction(e)} 
+                            value={salesQuantity} 
+                            onChange={(e) => setSalesQuantity(e.target.value)}
+                            placeholder="0.00"
+                            className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none font-bold"
+                          />
+                          <div className="flex items-center px-3 bg-muted rounded-md text-sm font-medium border">
+                            {products.find(p => p.id === selectedSalesProduct)?.unit}
+                          </div>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Total Price</Label>
+                      <div className="h-10 flex items-center px-3 bg-primary/5 rounded-md border-2 border-primary/20 text-lg font-bold text-primary">
+                        ₹ {totalSaleAmount}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-3 pt-4">
+                  <Button className="flex-1" variant="hero" onClick={handleSaveSale} disabled={!selectedSalesProduct || !salesQuantity || parseFloat(salesQuantity) <= 0}>
+                    <Save className="w-4 h-4 mr-2" /> Save Sale
+                  </Button>
+                  <Button variant="outline" onClick={() => { setSelectedSalesProduct(""); setSalesQuantity(""); setSalesSearch(""); }}>Cancel</Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Date-wise Sales History Table */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-primary" />
+                <h3 className="text-xl font-bold">Sales History</h3>
+              </div>
+              
+              {Object.keys(groupedSales).length > 0 ? (
+                Object.keys(groupedSales).sort((a,b) => b.split('/').reverse().join().localeCompare(a.split('/').reverse().join())).map(date => (
+                  <div key={date} className="space-y-3">
+                    <div className="flex items-center justify-between bg-muted/50 p-3 rounded-lg border border-primary/10">
+                      <div className="flex items-center gap-2 font-bold text-primary">
+                        <CalendarDays className="w-4 h-4" /> {date}
+                      </div>
+                      <div className="flex gap-4 text-sm font-semibold">
+                        <span>Total Qty: <span className="text-primary">{groupedSales[date].totalQty.toFixed(2)}</span></span>
+                        <span>Revenue: <span className="text-green-600">₹{groupedSales[date].totalRevenue.toFixed(2)}</span></span>
+                      </div>
+                    </div>
+                    <div className="bg-card rounded-xl border overflow-hidden shadow-sm">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead className="bg-muted/30 text-xs font-bold uppercase">
+                            <tr>
+                              <th className="p-3">Time</th>
+                              <th className="p-3">Product</th>
+                              <th className="p-3 text-center">Qty</th>
+                              <th className="p-3 text-right">Price</th>
+                              <th className="p-3 text-right">Total</th>
+                              <th className="p-3 text-center">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {groupedSales[date].items.map((sale: any) => (
+                              <tr key={sale._id} className="text-sm hover:bg-muted/10 transition-colors">
+                                <td className="p-3 text-muted-foreground">
+                                  {new Date(sale.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </td>
+                                <td className="p-3 font-medium">
+                                  {(sale.productId as any)?.name || 'Deleted Product'}
+                                </td>
+                                <td className="p-3 text-center font-bold">
+                                  {sale.quantity} {(sale.productId as any)?.unit}
+                                </td>
+                                <td className="p-3 text-right text-muted-foreground">₹{sale.unitPrice}</td>
+                                <td className="p-3 text-right font-bold text-primary">₹{sale.total}</td>
+                                <td className="p-3 text-center">
+                                  <div className="flex justify-center gap-1">
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="h-7 w-7 text-blue-600 hover:bg-blue-50"
+                                      onClick={() => {
+                                        setEditingSale(sale);
+                                        setSalesQuantity(sale.quantity.toString());
+                                        setIsSaleEditDialogOpen(true);
+                                      }}
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                      onClick={() => handleDeleteRequest(sale._id, "sale")}
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center p-12 bg-card border rounded-xl text-muted-foreground">
+                   No sales records found.
+                </div>
+              )}
+            </div>
          </div>
         )}
       </div>
 
-      <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
+      <Dialog open={isProductDialogOpen} onOpenChange={(open) => { setIsProductDialogOpen(open); if(!open) resetProductForm(); }}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto bg-card">
           <DialogHeader><DialogTitle>{editingProduct ? "Edit Product" : "Add New Product"}</DialogTitle></DialogHeader>
           <form onSubmit={handleProductSubmit} className="space-y-4 pt-4">
@@ -522,12 +731,25 @@ const Admin = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label>Price (₹)</Label>
-                <Input type="number" onKeyDown={handlePriceKeyPress} className={getBorderClass("price", productForm.price)} value={productForm.price} onChange={e => { setProductForm({...productForm, price: e.target.value}); setFormErrors(prev => {const n = {...prev}; delete n.price; return n;}); }} />
+                <Input 
+                  type="number" 
+                  onKeyDown={(e) => handleKeyRestriction(e)} 
+                  className={cn(getBorderClass("price", productForm.price), "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none")} 
+                  value={productForm.price} 
+                  onChange={e => { setProductForm({...productForm, price: e.target.value}); setFormErrors(prev => {const n = {...prev}; delete n.price; return n;}); }} 
+                />
                 {formErrors.price && <p className="text-[10px] text-destructive">{formErrors.price}</p>}
               </div>
               <div className="space-y-1">
                 <Label>Stock</Label>
-                <Input type="number" step="any" onKeyDown={(e) => {if(e.key==='-') e.preventDefault()}} className={getBorderClass("stock", productForm.stock)} value={productForm.stock} onChange={e => { setProductForm({...productForm, stock: e.target.value}); setFormErrors(prev => {const n = {...prev}; delete n.stock; return n;}); }} />
+                <Input 
+                  type="number" 
+                  step="any" 
+                  onKeyDown={(e) => handleKeyRestriction(e)} 
+                  className={cn(getBorderClass("stock", productForm.stock), "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none")} 
+                  value={productForm.stock} 
+                  onChange={e => { setProductForm({...productForm, stock: e.target.value}); setFormErrors(prev => {const n = {...prev}; delete n.stock; return n;}); }} 
+                />
                 {formErrors.stock && <p className="text-[10px] text-destructive">{formErrors.stock}</p>}
               </div>
             </div>
@@ -564,7 +786,7 @@ const Admin = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+      <Dialog open={isCategoryDialogOpen} onOpenChange={(open) => { setIsCategoryDialogOpen(open); if(!open) resetCategoryForm(); }}>
         <DialogContent className="bg-card">
           <DialogHeader><DialogTitle>{editingCategory ? "Edit Category" : "Add New Category"}</DialogTitle></DialogHeader>
           <form onSubmit={handleCategorySubmit} className="space-y-4 pt-2">
@@ -586,7 +808,48 @@ const Admin = () => {
         </DialogContent>
       </Dialog>
 
-      <ConfirmDeleteDialog open={!!deleteId} onClose={() => { setDeleteId(null); setDeleteType(null); }} onConfirm={confirmDelete} title={`Delete ${deleteType === "product" ? "Product" : "Category"}?`} description="This action is permanent and cannot be undone." />
+      {/* Sale Edit Dialog */}
+      <Dialog open={isSaleEditDialogOpen} onOpenChange={(open) => { setIsSaleEditDialogOpen(open); if(!open) { setEditingSale(null); setSalesQuantity(""); } }}>
+        <DialogContent className="bg-card">
+          <DialogHeader><DialogTitle>Edit Sale Record</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label>Product</Label>
+              <div className="p-2 bg-muted rounded-md font-medium">
+                {(editingSale?.productId as any)?.name}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Quantity</Label>
+              <Input 
+                type="number" 
+                step="any" 
+                onKeyDown={(e) => handleKeyRestriction(e)} 
+                value={salesQuantity} 
+                onChange={(e) => setSalesQuantity(e.target.value)}
+                className="font-bold"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Updated Total</Label>
+              <div className="h-10 flex items-center px-3 bg-primary/5 rounded-md border-2 border-primary/20 text-lg font-bold text-primary">
+                ₹ {totalSaleAmount}
+              </div>
+            </div>
+            <Button className="w-full" variant="hero" onClick={handleSaveSale}>
+              Update Sale
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDeleteDialog 
+        open={!!deleteId} 
+        onClose={() => { setDeleteId(null); setDeleteType(null); }} 
+        onConfirm={confirmDelete} 
+        title={`Delete ${deleteType === "product" ? "Product" : deleteType === "category" ? "Category" : "Sale Record"}?`} 
+        description="This action is permanent and cannot be undone." 
+      />
     </div>
   );
 };

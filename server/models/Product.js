@@ -7,7 +7,8 @@ const ProductSchema = new mongoose.Schema({
   image: { type: String },
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
   stock: { type: Number, default: 0 },
-  unit: { type: String, default: 'kg' }
+  unit: { type: String, default: 'kg' },
+  expiryDate: { type: Date }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Product', ProductSchema);

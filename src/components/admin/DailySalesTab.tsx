@@ -67,17 +67,22 @@ export const DailySalesTab = ({
 
   const displaySales = groupedSales[selectedDate];
 
+  // Get current product and check stock
+  const currentProduct = products.find(p => p.id === selectedSalesProduct);
+  const enteredQuantity = parseFloat(salesQuantity) || 0;
+  const isQuantityValid = enteredQuantity > 0 && (!currentProduct || enteredQuantity <= currentProduct.stock);
+
   // Validation for unpaid status requiring customer name
   const isCustomerNameRequired = paymentStatus === "unpaid";
   const canAddToDraft = selectedSalesProduct && 
                         salesQuantity && 
-                        parseFloat(salesQuantity) > 0 &&
+                        isQuantityValid &&
                         (!isCustomerNameRequired || (customerName && customerName.trim() !== ""));
 
   // Add or Update Draft
   const addOrUpdateDraft = () => {
     const product = products.find(p => p.id === selectedSalesProduct);
-    if (!product || !salesQuantity) return;
+    if (!product || !salesQuantity || !isQuantityValid) return;
 
     const draftItem = {
       tempId: editingDraftIndex !== null ? draftSales[editingDraftIndex].tempId : Date.now().toString(),
@@ -206,6 +211,30 @@ export const DailySalesTab = ({
     ? (currentSaleProduct.price * parseFloat(salesQuantity)).toFixed(2) 
     : "0.00";
 
+  // Calculate paid and unpaid revenue
+  const calculateRevenue = () => {
+    if (!displaySales) return { paid: 0, unpaid: 0, total: 0 };
+    
+    let paidRevenue = 0;
+    let unpaidRevenue = 0;
+    
+    displaySales.items.forEach((sale: any) => {
+      if (sale.paymentStatus === 'unpaid') {
+        unpaidRevenue += sale.total;
+      } else {
+        paidRevenue += sale.total;
+      }
+    });
+    
+    return {
+      paid: paidRevenue,
+      unpaid: unpaidRevenue,
+      total: paidRevenue + unpaidRevenue
+    };
+  };
+
+  const revenue = calculateRevenue();
+
   return (
     <div className="space-y-10">
       {/* Record Sale Form */}
@@ -247,15 +276,33 @@ export const DailySalesTab = ({
             <div className="space-y-2">
               <Label>Quantity</Label>
               <div className="flex gap-2">
-                <Input 
-                  type="number" 
-                  step="any" 
-                  onKeyDown={(e) => handleKeyRestriction(e)} 
-                  value={salesQuantity} 
-                  onChange={(e) => setSalesQuantity(e.target.value)}
-                  placeholder="0.00"
-                  className="font-bold"
-                />
+                <div className="flex-1">
+                  <Input 
+                    type="number" 
+                    step="any" 
+                    min="0"
+                    onKeyDown={(e) => handleKeyRestriction(e)} 
+                    value={salesQuantity} 
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // Prevent negative values
+                      if (val === '' || parseFloat(val) >= 0) {
+                        setSalesQuantity(val);
+                      }
+                    }}
+                    placeholder="0.00"
+                    className={`font-bold ${
+                      salesQuantity && currentProduct && parseFloat(salesQuantity) > currentProduct.stock 
+                        ? 'border-destructive border-2' 
+                        : ''
+                    }`}
+                  />
+                  {salesQuantity && currentProduct && parseFloat(salesQuantity) > currentProduct.stock && (
+                    <p className="text-xs text-destructive mt-1">
+                      Exceeds available stock ({currentProduct.stock} {currentProduct.unit})
+                    </p>
+                  )}
+                </div>
                 {selectedSalesProduct && (
                   <div className="flex items-center px-3 bg-muted rounded-md text-sm font-medium border animate-in fade-in duration-200">
                     {products.find(p => p.id === selectedSalesProduct)?.unit}
@@ -390,7 +437,9 @@ export const DailySalesTab = ({
           {displaySales && (
             <div className="flex gap-4 text-sm font-bold">
               <span className="bg-white/50 px-3 py-1 rounded border">Total Qty: {displaySales.totalQty.toFixed(2)}</span>
-              <span className="bg-white/50 px-3 py-1 rounded border text-green-600">Revenue: ₹{displaySales.totalRevenue.toFixed(2)}</span>
+              <span className="bg-green-100 text-green-700 px-3 py-1 rounded border border-green-200">Paid: ₹{revenue.paid.toFixed(2)}</span>
+              <span className="bg-red-100 text-red-700 px-3 py-1 rounded border border-red-200">Unpaid: ₹{revenue.unpaid.toFixed(2)}</span>
+              <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded border border-blue-200">Total: ₹{revenue.total.toFixed(2)}</span>
             </div>
           )}
         </div>
@@ -522,10 +571,17 @@ export const DailySalesTab = ({
               <Label>Quantity</Label>
               <Input 
                 type="number" 
-                step="any" 
+                step="any"
+                min="0"
                 onKeyDown={(e) => handleKeyRestriction(e)} 
                 value={salesQuantity} 
-                onChange={(e) => setSalesQuantity(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  // Prevent negative values
+                  if (val === '' || parseFloat(val) >= 0) {
+                    setSalesQuantity(val);
+                  }
+                }}
                 className="font-bold"
               />
             </div>

@@ -21,7 +21,16 @@ const createSchema = Joi.object({
     'number.min': 'Stock cannot be negative',
     'number.integer': 'Stock must be a whole number'
   }),
-  unit: Joi.string().default('kg')
+  unit: Joi.string().default('kg'),
+  
+  batchNo: Joi.string().required().messages({
+    'string.empty': 'Batch number is required',
+    'any.required': 'Batch number is required'
+  }),
+  expiryDate: Joi.date().required().messages({
+    'date.base': 'Please provide a valid expiry date',
+    'any.required': 'Expiry date is required'
+  })
 });
 
 module.exports = { createSchema };

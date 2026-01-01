@@ -27,11 +27,25 @@ export const useProducts = () => {
   };
 
   const createProduct = async (payload: any) => {
+    console.log('Creating product with payload:', payload);
+    
     const response = await fetch(`${API}/api/products`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Error creating product:', errorData);
+      toast({ 
+        title: "Error", 
+        description: errorData.message || errorData.error || "Failed to create product", 
+        variant: "destructive" 
+      });
+      throw new Error(errorData.message || "Failed to create product");
+    }
+    
     const res = await response.json();
     setProducts([...products, { ...res, id: res._id }]);
     setTempStocks(prev => ({ ...prev, [res._id]: res.stock }));
@@ -45,6 +59,18 @@ export const useProducts = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Error updating product:', errorData);
+      toast({ 
+        title: "Error", 
+        description: errorData.message || "Failed to update product", 
+        variant: "destructive" 
+      });
+      throw new Error(errorData.message || "Failed to update product");
+    }
+    
     const res = await response.json();
     setProducts(products.map(p => (String(p.id) === String(res._id) ? { ...res, id: res._id } : p)));
     setTempStocks(prev => ({ ...prev, [res._id]: res.stock }));

@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Save, Search, History, CalendarDays, Pencil, Trash2, Calendar as CalendarIcon, Plus, Package } from "lucide-react";
+import { Save, Search, History, CalendarDays, Pencil, Trash2, Calendar as CalendarIcon, Plus, Clock } from "lucide-react";
 import { Product } from "@/types";
 import { SaleRecord, GroupedSales } from "@/types/admin";
 import { handleKeyRestriction } from "@/utils/validation";
@@ -43,10 +43,10 @@ export const DailySalesTab = ({
   const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
   const [isSaleEditDialogOpen, setIsSaleEditDialogOpen] = useState(false);
 
-  // --- NEW: DRAFT SALES STATE ---
+  // --- DRAFT SALES STATE ---
   const [draftSales, setDraftSales] = useState<any[]>([]);
 
-  // --- NEW DATE FILTER LOGIC ---
+  // --- DATE FILTER LOGIC ---
   const todayDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
   const [selectedDate, setSelectedDate] = useState<string>(todayDate);
   const [rawDateValue, setRawDateValue] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD for input
@@ -62,7 +62,7 @@ export const DailySalesTab = ({
 
   const displaySales = groupedSales[selectedDate];
 
-  // ૧. ડ્રાફ્ટમાં એડ કરવા માટે (Add to Local List)
+  // ૧. ડ્રાફ્ટમાં એડ કરવા માટે
   const addToDraft = () => {
     const product = products.find(p => p.id === selectedSalesProduct);
     if (!product || !salesQuantity) return;
@@ -83,7 +83,7 @@ export const DailySalesTab = ({
     setSalesSearch("");
   };
 
-  // ૨. ફાઈનલ સેવ (Bulk Save)
+  // ૨. ફાઈનલ સેવ
   const handleFinalSave = async () => {
     if (draftSales.length === 0) return;
     try {
@@ -98,7 +98,7 @@ export const DailySalesTab = ({
           onProductUpdated({ ...data.product, id: data.product._id });
         }
       }
-      setDraftSales([]); // ક્લિયર લિસ્ટ
+      setDraftSales([]); 
     } catch (err) {
       console.error(err);
     }
@@ -199,9 +199,12 @@ export const DailySalesTab = ({
                   placeholder="0.00"
                   className="font-bold"
                 />
-                <div className="flex items-center px-3 bg-muted rounded-md text-sm font-medium border">
-                  {products.find(p => p.id === selectedSalesProduct)?.unit || '-'}
-                </div>
+                {/* POINT 3: Display unit box only when a product is selected */}
+                {selectedSalesProduct && (
+                  <div className="flex items-center px-3 bg-muted rounded-md text-sm font-medium border animate-in fade-in duration-200">
+                    {products.find(p => p.id === selectedSalesProduct)?.unit}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -295,7 +298,8 @@ export const DailySalesTab = ({
               <table className="w-full text-left">
                 <thead className="bg-muted/30 text-xs font-bold uppercase">
                   <tr>
-                    <th className="p-3">Time</th>
+                    {/* POINT 1: Column Header Updated */}
+                    <th className="p-3">Date & Time</th>
                     <th className="p-3">Product</th>
                     <th className="p-3 text-center">Qty</th>
                     <th className="p-3 text-right">Price</th>
@@ -304,45 +308,55 @@ export const DailySalesTab = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {displaySales.items.map((sale: any) => (
-                    <tr key={sale._id} className="text-sm hover:bg-muted/10 transition-colors">
-                      <td className="p-3 text-muted-foreground">
-                        {new Date(sale.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                      </td>
-                      <td className="p-3 font-medium">
-                        {(sale.productId as any)?.name || 'Deleted Product'}
-                      </td>
-                      <td className="p-3 text-center font-bold">
-                        {sale.quantity} {(sale.productId as any)?.unit}
-                      </td>
-                      <td className="p-3 text-right text-muted-foreground">₹{sale.unitPrice}</td>
-                      <td className="p-3 text-right font-bold text-primary">₹{sale.total}</td>
-                      <td className="p-3 text-center">
-                        <div className="flex justify-center gap-1">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-7 w-7 text-blue-600 hover:bg-blue-50"
-                            onClick={() => {
-                              setEditingSale(sale);
-                              setSalesQuantity(sale.quantity.toString());
-                              setIsSaleEditDialogOpen(true);
-                            }}
-                          >
-                            <Pencil className="w-3 h-3" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                            onClick={() => onDeleteSale(sale._id)}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {displaySales.items.map((sale: any) => {
+                    const dateObj = new Date(sale.createdAt);
+                    return (
+                      <tr key={sale._id} className="text-sm hover:bg-muted/10 transition-colors">
+                        <td className="p-3">
+                          {/* POINT 1: Displaying both Date and Time */}
+                          <div className="flex flex-col">
+                            <span className="font-medium">{dateObj.toLocaleDateString('en-GB')}</span>
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-3 font-medium">
+                          {(sale.productId as any)?.name || 'Deleted Product'}
+                        </td>
+                        <td className="p-3 text-center font-bold">
+                          {sale.quantity} {(sale.productId as any)?.unit}
+                        </td>
+                        <td className="p-3 text-right text-muted-foreground">₹{sale.unitPrice}</td>
+                        <td className="p-3 text-right font-bold text-primary">₹{sale.total}</td>
+                        <td className="p-3 text-center">
+                          <div className="flex justify-center gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-7 w-7 text-blue-600 hover:bg-blue-50"
+                              onClick={() => {
+                                setEditingSale(sale);
+                                setSalesQuantity(sale.quantity.toString());
+                                setIsSaleEditDialogOpen(true);
+                              }}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                              onClick={() => onDeleteSale(sale._id)}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

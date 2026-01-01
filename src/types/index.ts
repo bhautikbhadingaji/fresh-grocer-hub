@@ -13,6 +13,8 @@ export interface Product {
   categoryId: string;
   stock: number;
   unit: string;
+  expiryDate?: string; 
+  batchNo?: string;
 }
 
 export interface User {

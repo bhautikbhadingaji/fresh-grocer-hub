@@ -17,6 +17,8 @@ export interface ProductFormData {
   categoryId: string;
   stock: string;
   unit: string;
+  expiryDate: string;
+  batchNo: string;
 }
 
 export interface CategoryFormData {

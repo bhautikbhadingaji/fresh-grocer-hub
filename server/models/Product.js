@@ -8,7 +8,8 @@ const ProductSchema = new mongoose.Schema({
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
   stock: { type: Number, default: 0 },
   unit: { type: String, default: 'kg' },
-  expiryDate: { type: Date }
+  expiryDate: { type: Date },
+  batchNo: { type: String }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Product', ProductSchema);

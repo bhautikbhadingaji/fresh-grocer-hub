@@ -45,11 +45,11 @@ export const ProductsTab = ({
   const itemsPerPage = 6;
 
   const [productForm, setProductForm] = useState<ProductFormData>({
-    name: "", description: "", price: "", image: "", categoryId: "", stock: "", unit: "kg",
+    name: "", description: "", price: "", image: "", categoryId: "", stock: "", unit: "kg", expiryDate: "", batchNo: "",
   });
 
   const resetProductForm = () => {
-    setProductForm({ name: "", description: "", price: "", image: "", categoryId: "", stock: "", unit: "kg" });
+    setProductForm({ name: "", description: "", price: "", image: "", categoryId: "", stock: "", unit: "kg", expiryDate: "", batchNo: "" });
     setEditingProduct(null);
     setFormErrors({});
   };
@@ -70,11 +70,10 @@ export const ProductsTab = ({
     e.preventDefault();
     setFormErrors({});
     
-    // Duplicate Check: Name અને Price બંને મેચ થવા જોઈએ
     const isDuplicate = products.some(p => 
         p.name.toLowerCase().trim() === productForm.name.toLowerCase().trim() && 
         Number(p.price) === Number(productForm.price) &&
-        p.id !== editingProduct?.id // Edit વખતે પોતાની પ્રોડક્ટને બાકાત રાખવા માટે
+        p.id !== editingProduct?.id 
     );
 
     if (isDuplicate) { 
@@ -87,7 +86,7 @@ export const ProductsTab = ({
 
     try {
       await productSchema.validate(productForm, { abortEarly: false });
-      const payload = { 
+      const payload: any = { 
         ...productForm, 
         price: Number(productForm.price), 
         stock: Number(productForm.stock) 
@@ -148,6 +147,7 @@ export const ProductsTab = ({
               <tr>
                 <th className="p-4 font-semibold text-sm">Image</th>
                 <th className="p-4 font-semibold text-sm">Name</th>
+                <th className="p-4 font-semibold text-sm">Batch & Expiry</th>
                 <th className="p-4 font-semibold text-sm">Category</th>
                 <th className="p-4 font-semibold text-sm">Price</th>
                 <th className="p-4 font-semibold text-sm">Stock</th>
@@ -161,6 +161,12 @@ export const ProductsTab = ({
                     <img src={product.image} className="w-12 h-12 rounded-lg object-cover" />
                   </td>
                   <td className="p-4 font-medium">{product.name}</td>
+                  <td className="p-4 text-xs">
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-muted-foreground">Batch: {product.batchNo || "N/A"}</span>
+                      <span className="text-destructive font-medium">Exp: {product.expiryDate ? new Date(product.expiryDate).toLocaleDateString() : "N/A"}</span>
+                    </div>
+                  </td>
                   <td className="p-4 text-sm text-muted-foreground">
                     {categories.find(c => c.id === product.categoryId)?.name || 'N/A'}
                   </td>
@@ -181,7 +187,9 @@ export const ProductsTab = ({
                             image: product.image,
                             categoryId: product.categoryId,
                             stock: product.stock.toString(),
-                            unit: product.unit
+                            unit: product.unit,
+                            expiryDate: product.expiryDate ? new Date(product.expiryDate).toISOString().split('T')[0] : "",
+                            batchNo: product.batchNo || ""
                           });
                           setIsProductDialogOpen(true);
                         }}
@@ -202,7 +210,7 @@ export const ProductsTab = ({
               ))}
               {currentProducts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
                     No products found matching your search.
                   </td>
                 </tr>
@@ -251,7 +259,6 @@ export const ProductsTab = ({
         )}
       </div>
 
-      {/* Product Dialog */}
       <Dialog 
         open={isProductDialogOpen} 
         onOpenChange={(open) => { 
@@ -366,6 +373,35 @@ export const ProductsTab = ({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label>Expiry Date</Label>
+                <Input 
+                  type="date" 
+                  className={getBorderClass("expiryDate", productForm.expiryDate, formErrors)} 
+                  value={productForm.expiryDate} 
+                  onChange={e => { 
+                    setProductForm({...productForm, expiryDate: e.target.value}); 
+                    setFormErrors(prev => {const n = {...prev}; delete n.expiryDate; return n;}); 
+                  }} 
+                />
+                {formErrors.expiryDate && <p className="text-[10px] text-destructive">{formErrors.expiryDate}</p>}
+              </div>
+
+              <div className="space-y-1">
+                <Label>Batch No.</Label>
+                <Input 
+                  className={getBorderClass("batchNo", productForm.batchNo, formErrors)} 
+                  value={productForm.batchNo} 
+                  onChange={e => { 
+                    setProductForm({...productForm, batchNo: e.target.value}); 
+                    setFormErrors(prev => {const n = {...prev}; delete n.batchNo; return n;}); 
+                  }} 
+                />
+                {formErrors.batchNo && <p className="text-[10px] text-destructive">{formErrors.batchNo}</p>}
               </div>
             </div>
 

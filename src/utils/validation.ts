@@ -14,6 +14,12 @@ export const productSchema = Yup.object().shape({
   categoryId: Yup.string().required("Please select a category"),
   image: Yup.string().optional(),
   unit: Yup.string().required("Unit measurement is required"),
+  // અગાઉની તારીખ ના લઈ શકાય તે માટેનું વેલિડેશન
+  expiryDate: Yup.date()
+    .typeError("Please provide a valid date")
+    .required("Expiry date is required")
+    .min(new Date(new Date().setHours(0, 0, 0, 0)), "Expiry date cannot be in the past"),
+  batchNo: Yup.string().trim().required("Batch number is required"),
 });
 
 export const categorySchema = Yup.object().shape({
@@ -23,9 +29,27 @@ export const categorySchema = Yup.object().shape({
 
 export const getBorderClass = (fieldName: string, value: any, formErrors: { [key: string]: string }) => {
   if (formErrors[fieldName]) return "border-destructive focus-visible:ring-destructive border-2";
+  
+  // Number validation
   if (fieldName === "price" && value !== "" && Number(value) < 1) return "border-destructive border-2";
-  if ((fieldName === "name" || fieldName === "description") && value !== "" && value.trim() === "") return "border-destructive border-2";
+  if (fieldName === "stock" && value !== "" && Number(value) < 0) return "border-destructive border-2";
+  
+  // String trim validation (Name, Description, BatchNo)
+  if ((fieldName === "name" || fieldName === "description" || fieldName === "batchNo") && value !== "" && value.trim() === "") {
+    return "border-destructive border-2";
+  }
+
+  // Expiry Date logic: જો તારીખ ભૂતકાળની હોય તો લાલ બોર્ડર
+  if (fieldName === "expiryDate" && value) {
+    const selectedDate = new Date(value);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (selectedDate < today) return "border-destructive border-2";
+  }
+
+  // Success green border
   if (value && String(value).trim() !== "") return "border-green-500 focus-visible:ring-green-500 border-2";
+  
   return "";
 };
 

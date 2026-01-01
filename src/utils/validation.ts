@@ -55,6 +55,13 @@ export const getBorderClass = (fieldName: string, value: any, formErrors: { [key
 
 export const handleKeyRestriction = (e: React.KeyboardEvent<HTMLInputElement>) => {
   const allowedKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', '.'];
+  
+  // Prevent minus sign
+  if (e.key === '-') {
+    e.preventDefault();
+    return;
+  }
+  
   if (!/[0-9]/.test(e.key) && !allowedKeys.includes(e.key)) {
     e.preventDefault();
   }

@@ -22,6 +22,8 @@ import { ProductFormData } from "@/types/admin";
 import { productSchema, getBorderClass, handleKeyRestriction } from "@/utils/validation";
 import { cn } from "@/lib/utils";
 
+const DEFAULT_IMAGE = "https://s3.stroi-news.ru/img/bakaleya-kartinki-52.png";
+
 interface ProductsTabProps {
   products: Product[];
   categories: Category[];
@@ -89,7 +91,8 @@ export const ProductsTab = ({
       const payload: any = { 
         ...productForm, 
         price: Number(productForm.price), 
-        stock: Number(productForm.stock) 
+        stock: Number(productForm.stock),
+        image: productForm.image || DEFAULT_IMAGE
       };
 
       if (editingProduct) {
@@ -158,7 +161,7 @@ export const ProductsTab = ({
               {currentProducts.map((product) => (
                 <tr key={product.id} className="border-b border-border hover:bg-muted/20 transition-colors">
                   <td className="p-4">
-                    <img src={product.image} className="w-12 h-12 rounded-lg object-cover" />
+                    <img src={product.image || DEFAULT_IMAGE} className="w-12 h-12 rounded-lg object-cover" />
                   </td>
                   <td className="p-4 font-medium">{product.name}</td>
                   <td className="p-4 text-xs">
@@ -406,7 +409,7 @@ export const ProductsTab = ({
             </div>
 
             <div className="space-y-2">
-              <Label>Image</Label>
+              <Label>Image (Optional)</Label>
               <div className="flex gap-2 items-center">
                 <Input 
                   id="img-up" 
@@ -419,11 +422,11 @@ export const ProductsTab = ({
                   variant="outline" 
                   className={cn(
                     "w-full border-dashed", 
-                    productForm.image ? "border-green-500 border-2" : (formErrors.image && "border-destructive border-2")
+                    productForm.image ? "border-green-500 border-2" : ""
                   )} 
                   onClick={() => document.getElementById('img-up')?.click()}
                 >
-                  <Upload className="mr-2 h-4 w-4" /> Upload Image
+                  <Upload className="mr-2 h-4 w-4" /> {productForm.image ? "Change Image" : "Upload Image (Optional)"}
                 </Button>
                 {productForm.image && (
                   <div className="relative w-12 h-12 shrink-0">
@@ -439,7 +442,11 @@ export const ProductsTab = ({
                   </div>
                 )}
               </div>
-              {formErrors.image && <p className="text-[10px] text-destructive">{formErrors.image}</p>}
+              {!productForm.image && (
+                <p className="text-xs text-muted-foreground">
+                  No image? Default image will be used automatically.
+                </p>
+              )}
             </div>
 
             <Button type="submit" className="w-full" variant="hero">

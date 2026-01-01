@@ -4,7 +4,7 @@ const Product = require('../models/Product');
 // Create sale and decrement product stock atomically using conditional update
 exports.create = async (req, res) => {
   try {
-    const { productId, quantity, unitPrice } = req.body;
+    const { productId, quantity, unitPrice, customerName, paymentStatus } = req.body;
 
     // Attempt to decrement stock only if enough stock exists
     const updatedProduct = await Product.findOneAndUpdate(
@@ -20,7 +20,14 @@ exports.create = async (req, res) => {
     const price = unitPrice || updatedProduct.price || 0;
     const total = price * quantity;
 
-    const sale = await Sale.create({ productId, quantity, unitPrice: price, total });
+    const sale = await Sale.create({ 
+      productId, 
+      quantity, 
+      unitPrice: price, 
+      total,
+      customerName: customerName || '',
+      paymentStatus: paymentStatus || 'paid'
+    });
 
     res.status(201).json({ sale, product: updatedProduct });
   } catch (err) {
@@ -31,7 +38,7 @@ exports.create = async (req, res) => {
 // --- UPDATE SALE (Navu function add karyu che) ---
 exports.update = async (req, res) => {
   try {
-    const { quantity } = req.body;
+    const { quantity, customerName, paymentStatus } = req.body;
     const saleId = req.params.id;
 
     // 1. Find old sale record
@@ -59,7 +66,12 @@ exports.update = async (req, res) => {
 
     const updatedSale = await Sale.findByIdAndUpdate(
       saleId,
-      { quantity, total },
+      { 
+        quantity, 
+        total,
+        customerName: customerName !== undefined ? customerName : oldSale.customerName,
+        paymentStatus: paymentStatus || oldSale.paymentStatus
+      },
       { new: true }
     ).populate('productId');
 

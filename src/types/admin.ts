@@ -6,6 +6,8 @@ export interface SaleRecord {
   quantity: number;
   unitPrice: number;
   total: number;
+  customerName?: string;
+  paymentStatus: 'paid' | 'unpaid';
   createdAt: string;
 }
 

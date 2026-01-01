@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Save, Search, History, CalendarDays, Pencil, Trash2, Calendar as CalendarIcon, Plus, Clock } from "lucide-react";
+import { Save, Search, History, CalendarDays, Pencil, Trash2, Calendar as CalendarIcon, Plus, Clock, User, CreditCard } from "lucide-react";
 import { Product } from "@/types";
 import { SaleRecord, GroupedSales } from "@/types/admin";
 import { handleKeyRestriction } from "@/utils/validation";
@@ -43,8 +43,13 @@ export const DailySalesTab = ({
   const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
   const [isSaleEditDialogOpen, setIsSaleEditDialogOpen] = useState(false);
 
+  // --- NEW: Customer and Payment Status ---
+  const [customerName, setCustomerName] = useState<string>("");
+  const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid">("paid");
+
   // --- DRAFT SALES STATE ---
   const [draftSales, setDraftSales] = useState<any[]>([]);
+  const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
 
   // --- DATE FILTER LOGIC ---
   const todayDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
@@ -62,13 +67,20 @@ export const DailySalesTab = ({
 
   const displaySales = groupedSales[selectedDate];
 
-  // ૧. ડ્રાફ્ટમાં એડ કરવા માટે
-  const addToDraft = () => {
+  // Validation for unpaid status requiring customer name
+  const isCustomerNameRequired = paymentStatus === "unpaid";
+  const canAddToDraft = selectedSalesProduct && 
+                        salesQuantity && 
+                        parseFloat(salesQuantity) > 0 &&
+                        (!isCustomerNameRequired || (customerName && customerName.trim() !== ""));
+
+  // Add or Update Draft
+  const addOrUpdateDraft = () => {
     const product = products.find(p => p.id === selectedSalesProduct);
     if (!product || !salesQuantity) return;
 
-    const newDraft = {
-      tempId: Date.now().toString(),
+    const draftItem = {
+      tempId: editingDraftIndex !== null ? draftSales[editingDraftIndex].tempId : Date.now().toString(),
       productId: product.id,
       name: product.name,
       unit: product.unit,
@@ -77,28 +89,69 @@ export const DailySalesTab = ({
       total: product.price * parseFloat(salesQuantity)
     };
 
-    setDraftSales([...draftSales, newDraft]);
+    if (editingDraftIndex !== null) {
+      // Update existing draft
+      const updated = [...draftSales];
+      updated[editingDraftIndex] = draftItem;
+      setDraftSales(updated);
+      setEditingDraftIndex(null);
+    } else {
+      // Add new draft
+      setDraftSales([...draftSales, draftItem]);
+    }
+
+    // Reset form
     setSelectedSalesProduct("");
     setSalesQuantity("");
     setSalesSearch("");
   };
 
-  // ૨. ફાઈનલ સેવ
+  // Edit Draft Item
+  const editDraftItem = (index: number) => {
+    const item = draftSales[index];
+    setSelectedSalesProduct(item.productId);
+    setSalesQuantity(item.quantity.toString());
+    setEditingDraftIndex(index);
+  };
+
+  // Delete Draft Item
+  const deleteDraftItem = (tempId: string) => {
+    setDraftSales(draftSales.filter(d => d.tempId !== tempId));
+    if (editingDraftIndex !== null) {
+      setEditingDraftIndex(null);
+      setSelectedSalesProduct("");
+      setSalesQuantity("");
+      setSalesSearch("");
+    }
+  };
+
+  // Final Save All Items
   const handleFinalSave = async () => {
     if (draftSales.length === 0) return;
+    
+    // Validate customer name if payment is unpaid
+    if (paymentStatus === "unpaid" && (!customerName || customerName.trim() === "")) {
+      alert("Customer name is required when payment status is unpaid");
+      return;
+    }
+
     try {
       for (const sale of draftSales) {
         const payload = {
           productId: sale.productId,
           quantity: sale.quantity,
-          unitPrice: sale.unitPrice
+          unitPrice: sale.unitPrice,
+          customerName: customerName.trim(),
+          paymentStatus: paymentStatus
         };
         const data = await onCreateSale(payload);
         if (data.product) {
           onProductUpdated({ ...data.product, id: data.product._id });
         }
       }
-      setDraftSales([]); 
+      setDraftSales([]);
+      setCustomerName("");
+      setPaymentStatus("paid");
     } catch (err) {
       console.error(err);
     }
@@ -117,7 +170,9 @@ export const DailySalesTab = ({
       const payload = {
         productId: product.id,
         quantity: qty,
-        unitPrice: product.price
+        unitPrice: product.price,
+        customerName: customerName.trim(),
+        paymentStatus: paymentStatus
       };
 
       const data = editingSale 
@@ -136,6 +191,8 @@ export const DailySalesTab = ({
         setSalesSearch("");
       }
       setSalesQuantity("");
+      setCustomerName("");
+      setPaymentStatus("paid");
     } catch (err) {
       console.error(err);
     }
@@ -199,7 +256,6 @@ export const DailySalesTab = ({
                   placeholder="0.00"
                   className="font-bold"
                 />
-                {/* POINT 3: Display unit box only when a product is selected */}
                 {selectedSalesProduct && (
                   <div className="flex items-center px-3 bg-muted rounded-md text-sm font-medium border animate-in fade-in duration-200">
                     {products.find(p => p.id === selectedSalesProduct)?.unit}
@@ -216,10 +272,11 @@ export const DailySalesTab = ({
             <Button 
               variant="outline" 
               className="border-dashed border-2 hover:bg-primary/5"
-              onClick={addToDraft}
-              disabled={!selectedSalesProduct || !salesQuantity || parseFloat(salesQuantity) <= 0}
+              onClick={addOrUpdateDraft}
+              disabled={!canAddToDraft}
             >
-              <Plus className="w-4 h-4 mr-2" /> Add to List
+              <Plus className="w-4 h-4 mr-2" /> 
+              {editingDraftIndex !== null ? "Update Item" : "Add to List"}
             </Button>
           </div>
 
@@ -232,28 +289,74 @@ export const DailySalesTab = ({
                     <th className="p-2 text-left pl-4">Product</th>
                     <th className="p-2 text-center">Qty</th>
                     <th className="p-2 text-right pr-4">Total</th>
-                    <th className="p-2 text-center w-10"></th>
+                    <th className="p-2 text-center w-20">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {draftSales.map((sale) => (
-                    <tr key={sale.tempId} className="bg-white">
+                  {draftSales.map((sale, index) => (
+                    <tr key={sale.tempId} className={`bg-white ${editingDraftIndex === index ? 'bg-blue-50' : ''}`}>
                       <td className="p-2 pl-4 font-medium">{sale.name}</td>
                       <td className="p-2 text-center">{sale.quantity} {sale.unit}</td>
                       <td className="p-2 text-right pr-4 font-bold">₹{sale.total.toFixed(2)}</td>
                       <td className="p-2">
-                        <button onClick={() => setDraftSales(draftSales.filter(d => d.tempId !== sale.tempId))}>
-                          <Trash2 className="w-3 h-3 text-destructive" />
-                        </button>
+                        <div className="flex justify-center gap-1">
+                          <button 
+                            onClick={() => editDraftItem(index)}
+                            className="p-1 hover:bg-blue-100 rounded"
+                          >
+                            <Pencil className="w-3 h-3 text-blue-600" />
+                          </button>
+                          <button 
+                            onClick={() => deleteDraftItem(sale.tempId)}
+                            className="p-1 hover:bg-red-100 rounded"
+                          >
+                            <Trash2 className="w-3 h-3 text-destructive" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div className="p-3 bg-primary/5 flex justify-end">
-                <Button variant="hero" size="sm" onClick={handleFinalSave}>
-                  <Save className="w-4 h-4 mr-2" /> Save All Items
-                </Button>
+              
+              {/* Customer Name and Payment Status Section */}
+              <div className="p-4 bg-muted/30 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <User className="w-4 h-4" />
+                      Customer Name {isCustomerNameRequired && <span className="text-destructive">*</span>}
+                    </Label>
+                    <Input 
+                      placeholder={isCustomerNameRequired ? "Required for unpaid sales" : "Optional"}
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className={isCustomerNameRequired && (!customerName || customerName.trim() === '') ? 'border-destructive' : ''}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <CreditCard className="w-4 h-4" />
+                      Payment Status
+                    </Label>
+                    <Select value={paymentStatus} onValueChange={(val: "paid" | "unpaid") => setPaymentStatus(val)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card">
+                        <SelectItem value="paid">Paid</SelectItem>
+                        <SelectItem value="unpaid">Unpaid</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button variant="hero" size="sm" onClick={handleFinalSave}>
+                    <Save className="w-4 h-4 mr-2" /> Save All Items
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -298,22 +401,27 @@ export const DailySalesTab = ({
               <table className="w-full text-left">
                 <thead className="bg-muted/30 text-xs font-bold uppercase">
                   <tr>
-                    {/* POINT 1: Column Header Updated */}
                     <th className="p-3">Date & Time</th>
                     <th className="p-3">Product</th>
+                    <th className="p-3">Customer</th>
                     <th className="p-3 text-center">Qty</th>
                     <th className="p-3 text-right">Price</th>
                     <th className="p-3 text-right">Total</th>
+                    <th className="p-3 text-center">Status</th>
                     <th className="p-3 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {displaySales.items.map((sale: any) => {
                     const dateObj = new Date(sale.createdAt);
+                    const isUnpaid = sale.paymentStatus === 'unpaid';
+                    
                     return (
-                      <tr key={sale._id} className="text-sm hover:bg-muted/10 transition-colors">
+                      <tr 
+                        key={sale._id} 
+                        className={`text-sm hover:bg-muted/10 transition-colors ${isUnpaid ? 'bg-red-50' : ''}`}
+                      >
                         <td className="p-3">
-                          {/* POINT 1: Displaying both Date and Time */}
                           <div className="flex flex-col">
                             <span className="font-medium">{dateObj.toLocaleDateString('en-GB')}</span>
                             <span className="text-[10px] text-muted-foreground flex items-center gap-1">
@@ -325,11 +433,27 @@ export const DailySalesTab = ({
                         <td className="p-3 font-medium">
                           {(sale.productId as any)?.name || 'Deleted Product'}
                         </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1">
+                            <User className="w-3 h-3 text-muted-foreground" />
+                            {sale.customerName || '-'}
+                          </div>
+                        </td>
                         <td className="p-3 text-center font-bold">
                           {sale.quantity} {(sale.productId as any)?.unit}
                         </td>
                         <td className="p-3 text-right text-muted-foreground">₹{sale.unitPrice}</td>
                         <td className="p-3 text-right font-bold text-primary">₹{sale.total}</td>
+                        <td className="p-3 text-center">
+                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                            isUnpaid 
+                              ? 'bg-red-100 text-red-700 border border-red-200' 
+                              : 'bg-green-100 text-green-700 border border-green-200'
+                          }`}>
+                            <CreditCard className="w-3 h-3" />
+                            {isUnpaid ? 'Unpaid' : 'Paid'}
+                          </span>
+                        </td>
                         <td className="p-3 text-center">
                           <div className="flex justify-center gap-1">
                             <Button 
@@ -339,6 +463,8 @@ export const DailySalesTab = ({
                               onClick={() => {
                                 setEditingSale(sale);
                                 setSalesQuantity(sale.quantity.toString());
+                                setCustomerName(sale.customerName || '');
+                                setPaymentStatus(sale.paymentStatus || 'paid');
                                 setIsSaleEditDialogOpen(true);
                               }}
                             >
@@ -373,7 +499,12 @@ export const DailySalesTab = ({
         open={isSaleEditDialogOpen} 
         onOpenChange={(open) => { 
           setIsSaleEditDialogOpen(open); 
-          if(!open) { setEditingSale(null); setSalesQuantity(""); } 
+          if(!open) { 
+            setEditingSale(null); 
+            setSalesQuantity(""); 
+            setCustomerName("");
+            setPaymentStatus("paid");
+          } 
         }}
       >
         <DialogContent className="bg-card">
@@ -399,12 +530,44 @@ export const DailySalesTab = ({
               />
             </div>
             <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <User className="w-4 h-4" />
+                Customer Name {paymentStatus === "unpaid" && <span className="text-destructive">*</span>}
+              </Label>
+              <Input 
+                placeholder={paymentStatus === "unpaid" ? "Required for unpaid sales" : "Optional"}
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className={paymentStatus === "unpaid" && (!customerName || customerName.trim() === '') ? 'border-destructive' : ''}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
+                Payment Status
+              </Label>
+              <Select value={paymentStatus} onValueChange={(val: "paid" | "unpaid") => setPaymentStatus(val)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-card">
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="unpaid">Unpaid</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label>Updated Total</Label>
               <div className="h-10 flex items-center px-3 bg-primary/5 rounded-md border-2 border-primary/20 text-lg font-bold text-primary">
                 ₹ {totalSaleAmount}
               </div>
             </div>
-            <Button className="w-full" variant="hero" onClick={handleSaveSale}>
+            <Button 
+              className="w-full" 
+              variant="hero" 
+              onClick={handleSaveSale}
+              disabled={paymentStatus === "unpaid" && (!customerName || customerName.trim() === '')}
+            >
               Update Sale
             </Button>
           </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,10 +15,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Save, Search, History, CalendarDays, Pencil, Trash2, Calendar as CalendarIcon, Plus, Clock, User, CreditCard } from "lucide-react";
+import { 
+  Save, 
+  Search, 
+  History, 
+  CalendarDays, 
+  Pencil, 
+  Trash2, 
+  Calendar as CalendarIcon, 
+  Plus, 
+  Clock, 
+  User, 
+  CreditCard,
+  ChevronDown,
+  ChevronRight
+} from "lucide-react";
 import { Product } from "@/types";
 import { SaleRecord, GroupedSales } from "@/types/admin";
 import { handleKeyRestriction } from "@/utils/validation";
+// --- NEW: Toast Import ---
+import { useToast } from "@/hooks/use-toast";
 
 interface DailySalesTabProps {
   products: Product[];
@@ -37,6 +53,9 @@ export const DailySalesTab = ({
   onDeleteSale,
   onProductUpdated
 }: DailySalesTabProps) => {
+  // --- NEW: Toast Hook ---
+  const { toast } = useToast();
+
   const [selectedSalesProduct, setSelectedSalesProduct] = useState<string>("");
   const [salesQuantity, setSalesQuantity] = useState<string>("");
   const [salesSearch, setSalesSearch] = useState("");
@@ -46,6 +65,9 @@ export const DailySalesTab = ({
   // --- NEW: Customer and Payment Status ---
   const [customerName, setCustomerName] = useState<string>("");
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid">("paid");
+  
+  // --- Validation State ---
+  const [isSubmitAttempted, setIsSubmitAttempted] = useState(false);
 
   // --- DRAFT SALES STATE ---
   const [draftSales, setDraftSales] = useState<any[]>([]);
@@ -55,6 +77,9 @@ export const DailySalesTab = ({
   const todayDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
   const [selectedDate, setSelectedDate] = useState<string>(todayDate);
   const [rawDateValue, setRawDateValue] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD for input
+
+  // --- HISTORY ACCORDION STATE ---
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value; // YYYY-MM-DD
@@ -74,10 +99,10 @@ export const DailySalesTab = ({
 
   // Validation for unpaid status requiring customer name
   const isCustomerNameRequired = paymentStatus === "unpaid";
+  
   const canAddToDraft = selectedSalesProduct && 
                         salesQuantity && 
-                        isQuantityValid &&
-                        (!isCustomerNameRequired || (customerName && customerName.trim() !== ""));
+                        isQuantityValid;
 
   // Add or Update Draft
   const addOrUpdateDraft = () => {
@@ -134,9 +159,16 @@ export const DailySalesTab = ({
   const handleFinalSave = async () => {
     if (draftSales.length === 0) return;
     
-    // Validate customer name if payment is unpaid
+    // Check Validation Logic
     if (paymentStatus === "unpaid" && (!customerName || customerName.trim() === "")) {
-      alert("Customer name is required when payment status is unpaid");
+      // --- UPDATED: alert() ની બદલે Toast ---
+      toast({
+        title: "Validation Error",
+        description: "Customer name is required when payment status is unpaid",
+        variant: "destructive",
+      });
+      // Enable the red highlight
+      setIsSubmitAttempted(true);
       return;
     }
 
@@ -154,9 +186,11 @@ export const DailySalesTab = ({
           onProductUpdated({ ...data.product, id: data.product._id });
         }
       }
+      // Reset State on Success
       setDraftSales([]);
       setCustomerName("");
       setPaymentStatus("paid");
+      setIsSubmitAttempted(false); // Reset validation state
     } catch (err) {
       console.error(err);
     }
@@ -235,6 +269,146 @@ export const DailySalesTab = ({
 
   const revenue = calculateRevenue();
 
+  // --- Grouping Logic for History ---
+  const groupedHistoryItems = useMemo(() => {
+    if (!displaySales || !displaySales.items) return [];
+
+    const items = [...displaySales.items];
+    const groups: { main: SaleRecord; children: SaleRecord[] }[] = [];
+
+    items.forEach((item) => {
+      const lastGroup = groups.length > 0 ? groups[groups.length - 1] : null;
+      
+      const isSameBatch = lastGroup && 
+        (lastGroup.main.customerName || "") === (item.customerName || "") &&
+        lastGroup.main.paymentStatus === item.paymentStatus &&
+        Math.abs(new Date(lastGroup.main.createdAt).getTime() - new Date(item.createdAt).getTime()) < 60000; // within 1 minute
+
+      if (isSameBatch) {
+        lastGroup.children.push(item);
+      } else {
+        groups.push({ main: item, children: [] });
+      }
+    });
+
+    return groups;
+  }, [displaySales]);
+
+  const toggleGroup = (id: string) => {
+    const newSet = new Set(expandedGroups);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setExpandedGroups(newSet);
+  };
+
+  // Helper to render a single row
+  const RowItem = ({ sale, isChild = false, hasChildren = false, isExpanded = false, onToggle }: any) => {
+    const dateObj = new Date(sale.createdAt);
+    const isUnpaid = sale.paymentStatus === 'unpaid';
+
+    return (
+      <tr 
+        className={`text-sm hover:bg-muted/10 transition-colors 
+          ${isUnpaid ? 'bg-red-50' : ''} 
+          ${isChild ? 'bg-muted/5' : ''}`
+        }
+      >
+        <td className="p-3">
+          <div className="flex items-start gap-2">
+            {/* Arrow logic for Main Row */}
+            {!isChild && (
+              <div className="w-5 flex-shrink-0 pt-1">
+                {hasChildren ? (
+                  <button 
+                    onClick={onToggle}
+                    className="p-0.5 hover:bg-muted rounded-full transition-colors cursor-pointer"
+                  >
+                    {isExpanded ? 
+                      <ChevronDown className="w-4 h-4 text-primary" /> : 
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    }
+                  </button>
+                ) : <div className="w-4" />}
+              </div>
+            )}
+            
+            {/* Indentation for Child Row */}
+            {isChild && <div className="w-8 flex-shrink-0" />}
+
+            <div className="flex flex-col">
+              <span className="font-medium">{dateObj.toLocaleDateString('en-GB')}</span>
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+              </span>
+            </div>
+          </div>
+        </td>
+        <td className="p-3 font-medium">
+          <div className="flex items-center gap-2">
+            {isChild && <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />}
+            {(sale.productId as any)?.name || 'Deleted Product'}
+            {!isChild && hasChildren && (
+               <span className="ml-2 text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                 +{hasChildren} more
+               </span>
+            )}
+          </div>
+        </td>
+        <td className="p-3">
+          <div className="flex items-center gap-1">
+            <User className="w-3 h-3 text-muted-foreground" />
+            {sale.customerName || '-'}
+          </div>
+        </td>
+        <td className="p-3 text-center font-bold">
+          {sale.quantity} {(sale.productId as any)?.unit}
+        </td>
+        <td className="p-3 text-right text-muted-foreground">₹{sale.unitPrice}</td>
+        <td className="p-3 text-right font-bold text-primary">₹{sale.total}</td>
+        <td className="p-3 text-center">
+          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+            isUnpaid 
+              ? 'bg-red-100 text-red-700 border border-red-200' 
+              : 'bg-green-100 text-green-700 border border-green-200'
+          }`}>
+            <CreditCard className="w-3 h-3" />
+            {isUnpaid ? 'Unpaid' : 'Paid'}
+          </span>
+        </td>
+        <td className="p-3 text-center">
+          <div className="flex justify-center gap-1">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-7 w-7 text-blue-600 hover:bg-blue-50"
+              onClick={() => {
+                setEditingSale(sale);
+                setSalesQuantity(sale.quantity.toString());
+                setCustomerName(sale.customerName || '');
+                setPaymentStatus(sale.paymentStatus || 'paid');
+                setIsSaleEditDialogOpen(true);
+              }}
+            >
+              <Pencil className="w-3 h-3" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-7 w-7 text-destructive hover:bg-destructive/10"
+              onClick={() => onDeleteSale(sale._id)}
+            >
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
   return (
     <div className="space-y-10">
       {/* Record Sale Form */}
@@ -285,7 +459,6 @@ export const DailySalesTab = ({
                     value={salesQuantity} 
                     onChange={(e) => {
                       const val = e.target.value;
-                      // Prevent negative values
                       if (val === '' || parseFloat(val) >= 0) {
                         setSalesQuantity(val);
                       }
@@ -378,7 +551,12 @@ export const DailySalesTab = ({
                       placeholder={isCustomerNameRequired ? "Required for unpaid sales" : "Optional"}
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      className={isCustomerNameRequired && (!customerName || customerName.trim() === '') ? 'border-destructive' : ''}
+                      // Updated Logic: Only red if attempted to submit AND invalid
+                      className={
+                        isCustomerNameRequired && isSubmitAttempted && (!customerName || customerName.trim() === '') 
+                          ? 'border-destructive border-2' 
+                          : ''
+                      }
                     />
                   </div>
                   
@@ -447,7 +625,7 @@ export const DailySalesTab = ({
         {displaySales ? (
           <div className="bg-card rounded-xl border overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left">
+              <table className="w-full text-left border-collapse">
                 <thead className="bg-muted/30 text-xs font-bold uppercase">
                   <tr>
                     <th className="p-3">Date & Time</th>
@@ -461,75 +639,25 @@ export const DailySalesTab = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {displaySales.items.map((sale: any) => {
-                    const dateObj = new Date(sale.createdAt);
-                    const isUnpaid = sale.paymentStatus === 'unpaid';
+                  {groupedHistoryItems.map((group) => {
+                    const hasChildren = group.children.length > 0;
+                    const isExpanded = expandedGroups.has(group.main._id);
                     
                     return (
-                      <tr 
-                        key={sale._id} 
-                        className={`text-sm hover:bg-muted/10 transition-colors ${isUnpaid ? 'bg-red-50' : ''}`}
-                      >
-                        <td className="p-3">
-                          <div className="flex flex-col">
-                            <span className="font-medium">{dateObj.toLocaleDateString('en-GB')}</span>
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-3 font-medium">
-                          {(sale.productId as any)?.name || 'Deleted Product'}
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-1">
-                            <User className="w-3 h-3 text-muted-foreground" />
-                            {sale.customerName || '-'}
-                          </div>
-                        </td>
-                        <td className="p-3 text-center font-bold">
-                          {sale.quantity} {(sale.productId as any)?.unit}
-                        </td>
-                        <td className="p-3 text-right text-muted-foreground">₹{sale.unitPrice}</td>
-                        <td className="p-3 text-right font-bold text-primary">₹{sale.total}</td>
-                        <td className="p-3 text-center">
-                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                            isUnpaid 
-                              ? 'bg-red-100 text-red-700 border border-red-200' 
-                              : 'bg-green-100 text-green-700 border border-green-200'
-                          }`}>
-                            <CreditCard className="w-3 h-3" />
-                            {isUnpaid ? 'Unpaid' : 'Paid'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="flex justify-center gap-1">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-7 w-7 text-blue-600 hover:bg-blue-50"
-                              onClick={() => {
-                                setEditingSale(sale);
-                                setSalesQuantity(sale.quantity.toString());
-                                setCustomerName(sale.customerName || '');
-                                setPaymentStatus(sale.paymentStatus || 'paid');
-                                setIsSaleEditDialogOpen(true);
-                              }}
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                              onClick={() => onDeleteSale(sale._id)}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
+                      <div key={group.main._id} style={{ display: 'contents' }}>
+                        {/* Main Group Row */}
+                        <RowItem 
+                          sale={group.main} 
+                          hasChildren={hasChildren ? group.children.length : 0}
+                          isExpanded={isExpanded}
+                          onToggle={() => toggleGroup(group.main._id)}
+                        />
+
+                        {/* Children Rows (Dropdown) */}
+                        {hasChildren && isExpanded && group.children.map(child => (
+                           <RowItem key={child._id} sale={child} isChild={true} />
+                        ))}
+                      </div>
                     );
                   })}
                 </tbody>
@@ -577,7 +705,6 @@ export const DailySalesTab = ({
                 value={salesQuantity} 
                 onChange={(e) => {
                   const val = e.target.value;
-                  // Prevent negative values
                   if (val === '' || parseFloat(val) >= 0) {
                     setSalesQuantity(val);
                   }

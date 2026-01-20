@@ -167,7 +167,13 @@ export const ProductsTab = ({
                   <td className="p-4 text-xs">
                     <div className="flex flex-col">
                       <span className="font-semibold text-muted-foreground">Batch: {product.batchNo || "N/A"}</span>
-                      <span className="text-destructive font-medium">Exp: {product.expiryDate ? new Date(product.expiryDate).toLocaleDateString() : "N/A"}</span>
+                      <span className={`font-medium ${
+                        product.expiryDate && new Date(product.expiryDate) < new Date() 
+                          ? "text-destructive" 
+                          : "text-green-600"
+                      }`}>
+                        Exp: {product.expiryDate ? new Date(product.expiryDate).toLocaleDateString() : "N/A"}
+                      </span>
                     </div>
                   </td>
                   <td className="p-4 text-sm text-muted-foreground">

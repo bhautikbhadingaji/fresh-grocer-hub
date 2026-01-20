@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,8 +33,8 @@ import {
 import { Product } from "@/types";
 import { SaleRecord, GroupedSales } from "@/types/admin";
 import { handleKeyRestriction } from "@/utils/validation";
-// --- NEW: Toast Import ---
 import { useToast } from "@/hooks/use-toast";
+import { useCustomers } from "@/hooks/useCustomers";
 
 interface DailySalesTabProps {
   products: Product[];
@@ -53,8 +53,8 @@ export const DailySalesTab = ({
   onDeleteSale,
   onProductUpdated
 }: DailySalesTabProps) => {
-  // --- NEW: Toast Hook ---
   const { toast } = useToast();
+  const { customers, fetchCustomers } = useCustomers();
 
   const [selectedSalesProduct, setSelectedSalesProduct] = useState<string>("");
   const [salesQuantity, setSalesQuantity] = useState<string>("");
@@ -62,12 +62,13 @@ export const DailySalesTab = ({
   const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
   const [isSaleEditDialogOpen, setIsSaleEditDialogOpen] = useState(false);
 
-  // --- NEW: Customer and Payment Status ---
   const [customerName, setCustomerName] = useState<string>("");
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid">("paid");
-  
-  // --- Validation State ---
   const [isSubmitAttempted, setIsSubmitAttempted] = useState(false);
+  
+  // Customer suggestions state
+  const [customerSuggestions, setCustomerSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // --- DRAFT SALES STATE ---
   const [draftSales, setDraftSales] = useState<any[]>([]);
@@ -80,6 +81,49 @@ export const DailySalesTab = ({
 
   // --- HISTORY ACCORDION STATE ---
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  // Debounced customer search
+  const debouncedCustomerSearch = useCallback(
+    debounce((searchTerm: string) => {
+      if (searchTerm.length > 0) {
+        const suggestions = customers
+          .map(c => c.name)
+          .filter(name => name.toLowerCase().includes(searchTerm.toLowerCase()))
+          .slice(0, 5);
+        setCustomerSuggestions(suggestions);
+        setShowSuggestions(suggestions.length > 0);
+      } else {
+        setShowSuggestions(false);
+      }
+    }, 300),
+    [customers]
+  );
+
+  // Debounce utility function
+  function debounce<T extends (...args: any[]) => any>(func: T, delay: number): T {
+    let timeoutId: NodeJS.Timeout;
+    return ((...args: any[]) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func(...args), delay);
+    }) as T;
+  }
+
+  // Handle customer name input change
+  const handleCustomerNameChange = (value: string) => {
+    setCustomerName(value);
+    debouncedCustomerSearch(value);
+  };
+
+  // Handle suggestion selection
+  const selectCustomerSuggestion = (suggestion: string) => {
+    setCustomerName(suggestion);
+    setShowSuggestions(false);
+  };
+
+  // Fetch customers on component mount
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value; // YYYY-MM-DD
@@ -438,7 +482,7 @@ export const DailySalesTab = ({
                       .filter(p => p.name.toLowerCase().includes(salesSearch.toLowerCase()))
                       .map(p => (
                         <SelectItem key={p.id} value={p.id}>
-                          {p.name} (Stock: {p.stock} {p.unit})
+                          {p.name} - ₹{p.price} (Stock: {p.stock} {p.unit})
                         </SelectItem>
                       ))
                     }
@@ -542,7 +586,7 @@ export const DailySalesTab = ({
               {/* Customer Name and Payment Status Section */}
               <div className="p-4 bg-muted/30 space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-2">
+                  <div className="space-y-2 relative">
                     <Label className="flex items-center gap-2">
                       <User className="w-4 h-4" />
                       Customer Name {isCustomerNameRequired && <span className="text-destructive">*</span>}
@@ -550,14 +594,28 @@ export const DailySalesTab = ({
                     <Input 
                       placeholder={isCustomerNameRequired ? "Required for unpaid sales" : "Optional"}
                       value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      // Updated Logic: Only red if attempted to submit AND invalid
+                      onChange={(e) => handleCustomerNameChange(e.target.value)}
+                      onFocus={() => customerName && setShowSuggestions(customerSuggestions.length > 0)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                       className={
                         isCustomerNameRequired && isSubmitAttempted && (!customerName || customerName.trim() === '') 
                           ? 'border-destructive border-2' 
                           : ''
                       }
                     />
+                    {showSuggestions && (
+                      <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                        {customerSuggestions.map((suggestion, index) => (
+                          <div
+                            key={index}
+                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                            onClick={() => selectCustomerSuggestion(suggestion)}
+                          >
+                            {suggestion}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   
                   <div className="space-y-2">
@@ -712,7 +770,7 @@ export const DailySalesTab = ({
                 className="font-bold"
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 relative">
               <Label className="flex items-center gap-2">
                 <User className="w-4 h-4" />
                 Customer Name {paymentStatus === "unpaid" && <span className="text-destructive">*</span>}
@@ -720,9 +778,24 @@ export const DailySalesTab = ({
               <Input 
                 placeholder={paymentStatus === "unpaid" ? "Required for unpaid sales" : "Optional"}
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
+                onChange={(e) => handleCustomerNameChange(e.target.value)}
+                onFocus={() => customerName && setShowSuggestions(customerSuggestions.length > 0)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 className={paymentStatus === "unpaid" && (!customerName || customerName.trim() === '') ? 'border-destructive' : ''}
               />
+              {showSuggestions && (
+                <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                  {customerSuggestions.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                      onClick={() => selectCustomerSuggestion(suggestion)}
+                    >
+                      {suggestion}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label className="flex items-center gap-2">

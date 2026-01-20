@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Users, Search, DollarSign, CheckCircle2, AlertCircle, IndianRupee, Package } from "lucide-react";
 import { SaleRecord } from "@/types/admin";
 import { useToast } from "@/hooks/use-toast";
@@ -40,6 +41,7 @@ interface CustomerData {
 export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProps) => {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("all");
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleRecord | null>(null);
@@ -97,9 +99,27 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
   }, [salesHistory]);
 
   const filteredCustomers = useMemo(() => {
-    if (!searchQuery.trim()) return customersData;
-    return customersData.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [customersData, searchQuery]);
+    let filtered = customersData;
+    
+    // Filter by search query
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    }
+    
+    // Filter by payment status
+    if (paymentStatusFilter !== "all") {
+      filtered = filtered.filter(c => {
+        if (paymentStatusFilter === "paid") {
+          return c.totalUnpaid === 0;
+        } else if (paymentStatusFilter === "unpaid") {
+          return c.totalUnpaid > 0;
+        }
+        return true;
+      });
+    }
+    
+    return filtered;
+  }, [customersData, searchQuery, paymentStatusFilter]);
 
   const selectedCustomerData = useMemo(() => {
     if (!selectedCustomer) return null;
@@ -140,6 +160,29 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
     }
   };
 
+  const handlePayAll = async () => {
+    if (!selectedCustomerData || selectedCustomerData.totalUnpaid <= 0) return;
+
+    try {
+      setIsSubmitting(true);
+      const unpaidSales = selectedCustomerData.sales.filter(sale => Number(sale.totalUnpaid || 0) > 0);
+      
+      for (const sale of unpaidSales) {
+        await onPaymentUpdate(sale._id, Number(sale.totalUnpaid || 0));
+      }
+      
+      toast({ 
+        title: "Success", 
+        description: `₹${selectedCustomerData.totalUnpaid.toFixed(2)} total payment processed` 
+      });
+    } catch (err: any) {
+      console.error('Pay All Error:', err);
+      toast({ title: "Error", description: err.message || "Payment failed", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const openPaymentDialog = (sale: SaleRecord) => {
     setSelectedSale(sale);
     setPaymentAmount((sale.totalUnpaid || 0).toString());
@@ -160,7 +203,7 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-4">
         <StatCard title="Total Customers" value={summary.totalCustomers} icon={<Users className="w-4 h-4" />} />
-        <StatCard title="Total Revenue" value={`₹${summary.totalRevenue.toFixed(0)}`} icon={<DollarSign className="w-4 h-4" />} color="text-primary" />
+        <StatCard title="Total Revenue" value={`₹${summary.totalRevenue.toFixed(0)}`} icon={<IndianRupee className="w-4 h-4" />} color="text-primary" />
         <StatCard title="Total Paid" value={`₹${summary.totalPaid.toFixed(0)}`} icon={<CheckCircle2 className="w-4 h-4" />} color="text-green-600" />
         <StatCard title="Total Unpaid" value={`₹${summary.totalUnpaid.toFixed(0)}`} icon={<AlertCircle className="w-4 h-4" />} color="text-red-600" />
         <StatCard title="With Pending" value={summary.customersWithUnpaid} icon={<Users className="w-4 h-4" />} color="text-orange-600" />
@@ -169,9 +212,21 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         {/* Customer List */}
         <div className="lg:col-span-1 bg-card p-3 md:p-4 rounded-xl border">
-          <div className="relative mb-3 md:mb-4">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
+          <div className="space-y-3 mb-3 md:mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
+            </div>
+            <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Customers</SelectItem>
+                <SelectItem value="paid">Paid</SelectItem>
+                <SelectItem value="unpaid">Unpaid</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2 max-h-[300px] md:max-h-[500px] overflow-y-auto">
             {filteredCustomers.map((customer) => (
@@ -201,9 +256,21 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
             <div className="bg-card p-4 md:p-6 rounded-xl border">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-3 md:pb-4 mb-3 md:mb-4 gap-2">
                 <h2 className="text-xl md:text-2xl font-bold">{selectedCustomerData.name}</h2>
-                <div className="text-left sm:text-right">
-                  <p className="text-xs text-muted-foreground">UNPAID</p>
-                  <p className="text-xl md:text-2xl font-black text-red-600">₹{selectedCustomerData.totalUnpaid.toFixed(2)}</p>
+                <div className="text-left sm:text-right flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">UNPAID</p>
+                    <p className="text-xl md:text-2xl font-black text-red-600">₹{selectedCustomerData.totalUnpaid.toFixed(2)}</p>
+                  </div>
+                  {selectedCustomerData.totalUnpaid > 0 && (
+                    <Button 
+                      onClick={handlePayAll} 
+                      disabled={isSubmitting}
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700 text-white font-bold whitespace-nowrap"
+                    >
+                      {isSubmitting ? "Processing..." : "Pay All"}
+                    </Button>
+                  )}
                 </div>
               </div>
 

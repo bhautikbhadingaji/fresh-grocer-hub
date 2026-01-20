@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Store, ArrowLeft, Package, Tags, BarChart3 } from "lucide-react";
+import { Store, ArrowLeft, Package, Tags, BarChart3, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import { cn } from "@/lib/utils";
@@ -16,9 +16,10 @@ import { ProductsTab } from "@/components/admin/ProductsTab";
 import { CategoriesTab } from "@/components/admin/CategoriesTab";
 import { StockManagementTab } from "@/components/admin/StockManagementTab";
 import { DailySalesTab } from "@/components/admin/DailySalesTab";
+import { CustomersTab } from "@/components/admin/CustomersTab";
 
 const Admin = () => {
-  const [activeTab, setActiveTab] = useState<"products" | "categories" | "stock" | "sales">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "categories" | "stock" | "sales" | "customers">("products");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteType, setDeleteType] = useState<"product" | "category" | "sale" | null>(null);
   
@@ -44,9 +45,11 @@ const Admin = () => {
   } = useCategories();
 
   const {
+    salesHistory,
     createSale,
     updateSale,
     deleteSale,
+    recordPayment,
     groupSalesByDate
   } = useSales();
 
@@ -96,11 +99,20 @@ const Admin = () => {
     ));
   };
 
+  // Count customers with unpaid balance
+  const customersWithUnpaid = new Set(
+    salesHistory
+      .filter(s => s.paymentStatus === 'unpaid' || s.paymentStatus === 'partial')
+      .map(s => s.customerName)
+      .filter(Boolean)
+  ).size;
+
   const tabs = [
     { id: "products" as const, label: "Products", icon: Package, count: products.length },
     { id: "categories" as const, label: "Categories", icon: Tags, count: categories.length },
     { id: "stock" as const, label: "Stock Management", icon: BarChart3 },
     { id: "sales" as const, label: "Daily Sales", icon: Store },
+    { id: "customers" as const, label: "Customers", icon: Users, badge: customersWithUnpaid },
   ];
 
   return (
@@ -131,7 +143,7 @@ const Admin = () => {
               key={tab.id} 
               onClick={() => setActiveTab(tab.id)} 
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap", 
+                "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap relative", 
                 activeTab === tab.id 
                   ? "bg-primary text-primary-foreground shadow-glow" 
                   : "bg-card text-muted-foreground border border-border"
@@ -141,6 +153,11 @@ const Admin = () => {
               {tab.label} 
               {tab.count !== undefined && (
                 <span className="ml-1 opacity-70">({tab.count})</span>
+              )}
+              {tab.badge !== undefined && tab.badge > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                  {tab.badge}
+                </span>
               )}
             </button>
           ))}
@@ -183,6 +200,13 @@ const Admin = () => {
             onUpdateSale={updateSale}
             onDeleteSale={(id) => handleDeleteRequest(id, "sale")}
             onProductUpdated={handleProductUpdate}
+          />
+        )}
+
+        {activeTab === "customers" && (
+          <CustomersTab
+            salesHistory={salesHistory}
+            onPaymentUpdate={recordPayment}
           />
         )}
       </div>

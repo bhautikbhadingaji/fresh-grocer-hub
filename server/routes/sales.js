@@ -6,7 +6,8 @@ const { createSaleSchema, updateSaleSchema } = require('../validators/saleValida
 
 router.get('/', ctrl.getAll);
 router.post('/', validate(createSaleSchema), ctrl.create);
-router.put('/:id', validate(updateSaleSchema), ctrl.update); // Navi route edit mate
+router.put('/:id', validate(updateSaleSchema), ctrl.update);
+router.put('/:id/payment', ctrl.updatePayment);
 router.delete('/:id', ctrl.remove);
 router.get('/summary/daily', ctrl.summary);
 

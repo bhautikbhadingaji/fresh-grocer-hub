@@ -12,11 +12,15 @@ export const useSales = () => {
     fetchSales();
   }, []);
 
-  const fetchSales = () => {
-    fetch(`${API}/api/sales`)
-      .then(r => r.json())
-      .then(data => setSalesHistory(data))
-      .catch(() => {});
+  const fetchSales = async () => {
+    try {
+      const response = await fetch(`${API}/api/sales`);
+      const data = await response.json();
+      setSalesHistory(data);
+      console.log('Sales refreshed:', data.length);
+    } catch (err) {
+      console.error('Failed to fetch sales:', err);
+    }
   };
 
   const createSale = async (payload: any) => {
@@ -63,6 +67,27 @@ export const useSales = () => {
     return res;
   };
 
+  const recordPayment = async (saleId: string, amountPaid: number) => {
+    const response = await fetch(`${API}/api/customers/payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saleId, amountPaid, paymentMethod: 'cash' })
+    });
+    
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || 'Payment failed');
+    }
+    
+    const data = await response.json();
+    toast({ title: "Payment Recorded Successfully" });
+    
+    // Force refresh sales data
+    await fetchSales();
+    
+    return data;
+  };
+
   const groupSalesByDate = (): GroupedSales => {
     return salesHistory.reduce((groups: any, sale) => {
       const date = new Date(sale.createdAt).toLocaleDateString('en-GB');
@@ -80,6 +105,7 @@ export const useSales = () => {
     createSale,
     updateSale,
     deleteSale,
+    recordPayment,
     fetchSales,
     groupSalesByDate
   };

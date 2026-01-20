@@ -1,12 +1,10 @@
 const Sale = require('../models/Sale');
 const Product = require('../models/Product');
 
-// Create sale and decrement product stock atomically using conditional update
 exports.create = async (req, res) => {
   try {
     const { productId, quantity, unitPrice, customerName, paymentStatus } = req.body;
 
-    // Attempt to decrement stock only if enough stock exists
     const updatedProduct = await Product.findOneAndUpdate(
       { _id: productId, stock: { $gte: quantity } },
       { $inc: { stock: -quantity } },
@@ -20,13 +18,16 @@ exports.create = async (req, res) => {
     const price = unitPrice || updatedProduct.price || 0;
     const total = price * quantity;
 
+    const isPaid = paymentStatus === 'paid';
     const sale = await Sale.create({ 
       productId, 
       quantity, 
       unitPrice: price, 
       total,
       customerName: customerName || '',
-      paymentStatus: paymentStatus || 'paid'
+      paymentStatus: isPaid ? 'paid' : 'unpaid',
+      totalPaid: isPaid ? total : 0,
+      totalUnpaid: isPaid ? 0 : total
     });
 
     res.status(201).json({ sale, product: updatedProduct });
@@ -35,21 +36,16 @@ exports.create = async (req, res) => {
   }
 };
 
-// --- UPDATE SALE (Navu function add karyu che) ---
 exports.update = async (req, res) => {
   try {
     const { quantity, customerName, paymentStatus } = req.body;
     const saleId = req.params.id;
 
-    // 1. Find old sale record
     const oldSale = await Sale.findById(saleId);
     if (!oldSale) return res.status(404).json({ message: 'Sale record not found' });
 
-    // 2. Diff calculation (Junni quantity ane navi quantity no tafavat)
     const diff = quantity - oldSale.quantity;
 
-    // 3. Update Product stock (Jo navi quantity vadhare hoy to stock ghatse, ochi hoy to badhse)
-    // Check if enough stock is available for the increase
     const updatedProduct = await Product.findOneAndUpdate(
       { _id: oldSale.productId, stock: { $gte: diff } },
       { $inc: { stock: -diff } },
@@ -60,7 +56,6 @@ exports.update = async (req, res) => {
       return res.status(400).json({ message: 'Insufficient stock to update sale' });
     }
 
-    // 4. Update Sale record
     const unitPrice = oldSale.unitPrice;
     const total = unitPrice * quantity;
 
@@ -76,6 +71,38 @@ exports.update = async (req, res) => {
     ).populate('productId');
 
     res.json({ sale: updatedSale, product: updatedProduct });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+exports.updatePayment = async (req, res) => {
+  try {
+    const { amountPaid } = req.body;
+    const saleId = req.params.id;
+
+    const sale = await Sale.findById(saleId);
+    if (!sale) {
+      return res.status(404).json({ message: 'Sale not found' });
+    }
+
+    const newTotalPaid = (sale.totalPaid || 0) + amountPaid;
+    const newTotalUnpaid = sale.total - newTotalPaid;
+
+    let newPaymentStatus = 'unpaid';
+    if (newTotalUnpaid <= 0) {
+      newPaymentStatus = 'paid';
+    } else if (newTotalPaid > 0) {
+      newPaymentStatus = 'partial';
+    }
+
+    await Sale.findByIdAndUpdate(saleId, { 
+      paymentStatus: newPaymentStatus,
+      totalPaid: newTotalPaid,
+      totalUnpaid: Math.max(0, newTotalUnpaid)
+    });
+
+    res.json({ message: 'Payment updated successfully' });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }

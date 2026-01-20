@@ -6,7 +6,9 @@ const SaleSchema = new mongoose.Schema({
   unitPrice: { type: Number },
   total: { type: Number },
   customerName: { type: String, default: '' },
-  paymentStatus: { type: String, enum: ['paid', 'unpaid'], default: 'paid' },
+  paymentStatus: { type: String, enum: ['paid', 'unpaid', 'partial'], default: 'paid' },
+  totalPaid: { type: Number, default: 0 },
+  totalUnpaid: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 

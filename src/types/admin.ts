@@ -1,31 +1,39 @@
-import { Product } from "@/types";
+// types/admin.ts
+
+export interface Product {
+  id: string;
+  _id?: string;
+  name: string;
+  description: string;
+  price: number;
+  stock: number;
+  categoryId: string;
+  imageUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Category {
+  id: string;
+  _id?: string;
+  name: string;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export interface SaleRecord {
   _id: string;
-  productId: Product;
+  productId: Product | string;
   quantity: number;
   unitPrice: number;
   total: number;
   customerName?: string;
-  paymentStatus: 'paid' | 'unpaid';
+  paymentStatus: 'paid' | 'unpaid' | 'partial';
+  totalPaid?: number;
+  totalUnpaid?: number;
   createdAt: string;
-}
-
-export interface ProductFormData {
-  name: string;
-  description: string;
-  price: string;
-  image: string;
-  categoryId: string;
-  stock: string;
-  unit: string;
-  expiryDate: string;
-  batchNo: string;
-}
-
-export interface CategoryFormData {
-  name: string;
-  icon: string;
+  updatedAt?: string;
 }
 
 export interface GroupedSales {
@@ -34,4 +42,16 @@ export interface GroupedSales {
     totalRevenue: number;
     totalQty: number;
   };
+}
+
+export interface Payment {
+  _id: string;
+  saleId: string;
+  customerId: string;
+  amountPaid: number;
+  paymentMethod: 'cash' | 'card' | 'upi' | 'other';
+  paymentDate: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }

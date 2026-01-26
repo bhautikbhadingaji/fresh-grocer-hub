@@ -9,7 +9,11 @@ const CustomerSchema = new mongoose.Schema({
   },
   phone: { type: String, default: '' },
   email: { type: String, default: '' },
-  address: { type: String, default: '' }
+  address: { type: String, default: '' },
+  payments: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Payment'
+  }]
 }, { 
   timestamps: true 
 });

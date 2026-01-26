@@ -1,5 +1,6 @@
 const Sale = require('../models/Sale');
 const Payment = require('../models/Payment');
+const Customer = require('../models/Customer');
 
 exports.getAll = async (req, res) => {
   try {
@@ -100,12 +101,19 @@ exports.recordPayment = async (req, res) => {
       });
     }
 
-    await Payment.create({
+    const payment = await Payment.create({
       saleId,
       customerId: sale.customerName,
       amountPaid: amountToPay,
       paymentMethod: paymentMethod || 'cash'
     });
+
+    // Update customer's payments array
+    await Customer.findOneAndUpdate(
+      { name: sale.customerName },
+      { $push: { payments: payment._id } },
+      { upsert: true }
+    );
 
     const newTotalPaid = currentPaid + amountToPay;
     const newTotalUnpaid = Math.max(0, totalBill - newTotalPaid);
@@ -174,6 +182,40 @@ exports.getSummary = async (req, res) => {
       totalPaid: 0,
       totalUnpaid: 0,
       customersWithUnpaid: 0
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+exports.updateCustomer = async (req, res) => {
+  try {
+    const { customerName } = req.params;
+    const { name, address, phone } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Name is required' });
+    }
+
+    // Update or create customer record
+    const customer = await Customer.findOneAndUpdate(
+      { name: customerName },
+      { name: name.trim(), address: address || '', phone: phone || '' },
+      { upsert: true, new: true }
+    );
+
+    // If name changed, update all sales records
+    if (customerName !== name.trim()) {
+      await Sale.updateMany(
+        { customerName: customerName },
+        { customerName: name.trim() }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'Customer updated successfully',
+      customer
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });

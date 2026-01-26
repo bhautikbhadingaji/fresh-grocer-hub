@@ -58,6 +58,8 @@ export const DailySalesTab = ({
 
   const [selectedSalesProduct, setSelectedSalesProduct] = useState<string>("");
   const [salesQuantity, setSalesQuantity] = useState<string>("");
+  const [salesPrice, setSalesPrice] = useState<string>("");
+  const [inputMode, setInputMode] = useState<"quantity" | "price">("quantity");
   const [salesSearch, setSalesSearch] = useState("");
   const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
   const [isSaleEditDialogOpen, setIsSaleEditDialogOpen] = useState(false);
@@ -136,6 +138,27 @@ export const DailySalesTab = ({
 
   const displaySales = groupedSales[selectedDate];
 
+  // Auto-calculate based on input mode
+  const handleQuantityChange = (value: string) => {
+    setSalesQuantity(value);
+    if (currentProduct && value && inputMode === "quantity") {
+      const qty = parseFloat(value);
+      if (!isNaN(qty)) {
+        setSalesPrice((currentProduct.price * qty).toFixed(2));
+      }
+    }
+  };
+
+  const handlePriceChange = (value: string) => {
+    setSalesPrice(value);
+    if (currentProduct && value && inputMode === "price") {
+      const price = parseFloat(value);
+      if (!isNaN(price) && currentProduct.price > 0) {
+        setSalesQuantity((price / currentProduct.price).toFixed(2));
+      }
+    }
+  };
+
   // Get current product and check stock
   const currentProduct = products.find(p => p.id === selectedSalesProduct);
   const enteredQuantity = parseFloat(salesQuantity) || 0;
@@ -160,7 +183,7 @@ export const DailySalesTab = ({
       unit: product.unit,
       quantity: parseFloat(salesQuantity),
       unitPrice: product.price,
-      total: product.price * parseFloat(salesQuantity)
+      total: parseFloat(salesPrice) || (product.price * parseFloat(salesQuantity))
     };
 
     if (editingDraftIndex !== null) {
@@ -177,6 +200,7 @@ export const DailySalesTab = ({
     // Reset form
     setSelectedSalesProduct("");
     setSalesQuantity("");
+    setSalesPrice("");
     setSalesSearch("");
   };
 
@@ -185,6 +209,7 @@ export const DailySalesTab = ({
     const item = draftSales[index];
     setSelectedSalesProduct(item.productId);
     setSalesQuantity(item.quantity.toString());
+    setSalesPrice(item.total.toFixed(2));
     setEditingDraftIndex(index);
   };
 
@@ -195,6 +220,7 @@ export const DailySalesTab = ({
       setEditingDraftIndex(null);
       setSelectedSalesProduct("");
       setSalesQuantity("");
+      setSalesPrice("");
       setSalesSearch("");
     }
   };
@@ -285,9 +311,9 @@ export const DailySalesTab = ({
     p.id === (editingSale ? (editingSale.productId as any)._id : selectedSalesProduct)
   );
   
-  const totalSaleAmount = currentSaleProduct && salesQuantity 
+  const totalSaleAmount = salesPrice || (currentSaleProduct && salesQuantity 
     ? (currentSaleProduct.price * parseFloat(salesQuantity)).toFixed(2) 
-    : "0.00";
+    : "0.00");
 
   // Calculate paid and unpaid revenue
   const calculateRevenue = () => {
@@ -492,6 +518,19 @@ export const DailySalesTab = ({
             </div>
 
             <div className="space-y-2">
+              <Label>Input Mode</Label>
+              <Select value={inputMode} onValueChange={(val: "quantity" | "price") => setInputMode(val)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-card">
+                  <SelectItem value="quantity">By Quantity</SelectItem>
+                  <SelectItem value="price">By Price</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label>Quantity</Label>
               <div className="flex gap-2">
                 <div className="flex-1">
@@ -504,7 +543,7 @@ export const DailySalesTab = ({
                     onChange={(e) => {
                       const val = e.target.value;
                       if (val === '' || parseFloat(val) >= 0) {
-                        setSalesQuantity(val);
+                        handleQuantityChange(val);
                       }
                     }}
                     placeholder="0.00"
@@ -513,6 +552,7 @@ export const DailySalesTab = ({
                         ? 'border-destructive border-2' 
                         : ''
                     }`}
+                    disabled={inputMode === "price"}
                   />
                   {salesQuantity && currentProduct && parseFloat(salesQuantity) > currentProduct.stock && (
                     <p className="text-xs text-destructive mt-1">
@@ -525,6 +565,35 @@ export const DailySalesTab = ({
                     {products.find(p => p.id === selectedSalesProduct)?.unit}
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Price (₹)</Label>
+              <Input 
+                type="number" 
+                step="any" 
+                min="0"
+                onKeyDown={(e) => handleKeyRestriction(e)} 
+                value={salesPrice} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || parseFloat(val) >= 0) {
+                    handlePriceChange(val);
+                  }
+                }}
+                placeholder="0.00"
+                className="font-bold"
+                disabled={inputMode === "quantity"}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Rate per {currentProduct?.unit || 'unit'}</Label>
+              <div className="flex items-center px-3 bg-muted rounded-md text-sm font-medium border h-10">
+                ₹{currentProduct?.price || 0}
               </div>
             </div>
           </div>

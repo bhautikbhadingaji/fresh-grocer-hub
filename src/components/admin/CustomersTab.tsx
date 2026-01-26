@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Search, DollarSign, CheckCircle2, AlertCircle, IndianRupee, Package } from "lucide-react";
+import { Users, Search, DollarSign, CheckCircle2, AlertCircle, IndianRupee, Package, Edit } from "lucide-react";
 import { SaleRecord } from "@/types/admin";
 import { useToast } from "@/hooks/use-toast";
 
@@ -26,6 +26,7 @@ const handleKeyRestriction = (e: React.KeyboardEvent<HTMLInputElement>) => {
 interface CustomersTabProps {
   salesHistory: SaleRecord[];
   onPaymentUpdate: (saleId: string, amountPaid: number) => Promise<any>;
+  onCustomerUpdate?: (customerName: string, updates: { name: string; address?: string; phone?: string }) => Promise<any>;
 }
 
 interface CustomerData {
@@ -36,9 +37,11 @@ interface CustomerData {
   salesCount: number;
   lastPurchaseDate: string;
   sales: SaleRecord[];
+  address?: string;
+  phone?: string;
 }
 
-export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProps) => {
+export const CustomersTab = ({ salesHistory, onPaymentUpdate, onCustomerUpdate }: CustomersTabProps) => {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("all");
@@ -47,6 +50,13 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
   const [selectedSale, setSelectedSale] = useState<SaleRecord | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Edit customer states
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ name: "", address: "", phone: "" });
+  
+  // Pay All confirmation state
+  const [payAllDialogOpen, setPayAllDialogOpen] = useState(false);
 
   // Handle payment amount change with validation
   const handlePaymentAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -175,6 +185,7 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
         title: "Success", 
         description: `₹${selectedCustomerData.totalUnpaid.toFixed(2)} total payment processed` 
       });
+      setPayAllDialogOpen(false);
     } catch (err: any) {
       console.error('Pay All Error:', err);
       toast({ title: "Error", description: err.message || "Payment failed", variant: "destructive" });
@@ -187,6 +198,35 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
     setSelectedSale(sale);
     setPaymentAmount((sale.totalUnpaid || 0).toString());
     setPaymentDialogOpen(true);
+  };
+
+  const openEditDialog = (customer: CustomerData) => {
+    setEditForm({
+      name: customer.name,
+      address: customer.address || "",
+      phone: customer.phone || ""
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSubmit = async () => {
+    if (!onCustomerUpdate || !selectedCustomerData) return;
+    
+    if (!editForm.name.trim()) {
+      toast({ title: "Error", description: "Name is required", variant: "destructive" });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await onCustomerUpdate(selectedCustomerData.name, editForm);
+      toast({ title: "Success", description: "Customer updated successfully" });
+      setEditDialogOpen(false);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to update customer", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const summary = useMemo(() => {
@@ -255,7 +295,17 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
           {selectedCustomerData ? (
             <div className="bg-card p-4 md:p-6 rounded-xl border">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-3 md:pb-4 mb-3 md:mb-4 gap-2">
-                <h2 className="text-xl md:text-2xl font-bold">{selectedCustomerData.name}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl md:text-2xl font-bold">{selectedCustomerData.name}</h2>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => openEditDialog(selectedCustomerData)}
+                    className="h-8 w-8 p-0"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </Button>
+                </div>
                 <div className="text-left sm:text-right flex flex-col sm:flex-row items-start sm:items-center gap-2">
                   <div>
                     <p className="text-xs text-muted-foreground">UNPAID</p>
@@ -263,7 +313,7 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
                   </div>
                   {selectedCustomerData.totalUnpaid > 0 && (
                     <Button 
-                      onClick={handlePayAll} 
+                      onClick={() => setPayAllDialogOpen(true)} 
                       disabled={isSubmitting}
                       size="sm"
                       className="bg-green-600 hover:bg-green-700 text-white font-bold whitespace-nowrap"
@@ -417,6 +467,91 @@ export const CustomersTab = ({ salesHistory, onPaymentUpdate }: CustomersTabProp
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Customer Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader><DialogTitle>Edit Customer</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Name *</Label>
+              <Input 
+                value={editForm.name} 
+                onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Customer name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Address</Label>
+              <Input 
+                value={editForm.address} 
+                onChange={(e) => setEditForm(prev => ({ ...prev, address: e.target.value }))}
+                placeholder="Customer address (optional)"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Contact Number</Label>
+              <Input 
+                value={editForm.phone} 
+                onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                placeholder="Phone number (optional)"
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button 
+                variant="outline" 
+                className="flex-1" 
+                onClick={() => setEditDialogOpen(false)} 
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button 
+                className="flex-1" 
+                onClick={handleEditSubmit} 
+                disabled={isSubmitting || !editForm.name.trim()}
+              >
+                {isSubmitting ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pay All Confirmation Dialog */}
+      <Dialog open={payAllDialogOpen} onOpenChange={setPayAllDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader><DialogTitle>Confirm Payment</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="text-center space-y-2">
+              <p className="text-lg">Pay all pending amount for</p>
+              <p className="text-xl font-bold text-primary">{selectedCustomerData?.name}</p>
+              <div className="bg-muted p-4 rounded-lg">
+                <p className="text-sm text-muted-foreground">Total Amount</p>
+                <p className="text-2xl font-bold text-green-600">₹{selectedCustomerData?.totalUnpaid.toFixed(2)}</p>
+              </div>
+              <p className="text-sm text-muted-foreground">This will mark all unpaid sales as paid.</p>
+            </div>
+            <div className="flex gap-3">
+              <Button 
+                variant="outline" 
+                className="flex-1" 
+                onClick={() => setPayAllDialogOpen(false)} 
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button 
+                className="flex-1 bg-green-600 hover:bg-green-700" 
+                onClick={handlePayAll} 
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Processing..." : "Confirm Payment"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
